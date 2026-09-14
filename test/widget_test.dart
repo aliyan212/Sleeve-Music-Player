@@ -7,7 +7,11 @@
 
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
+import 'package:animations/animations.dart';
+import 'package:music_player/core/theme/app_theme.dart';
+import 'package:music_player/ui/shared/app_empty_state.dart';
+import 'package:music_player/ui/shared/alphabetical_bubble_scroller.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
@@ -21,6 +25,10 @@ import 'package:music_player/utils/tag_write_access.dart';
 import 'package:music_player/data/models/user_playlist.dart';
 import 'package:music_player/services/app_state_controller.dart';
 import 'package:music_player/services/playback_controller.dart';
+import 'package:music_player/widgets/search/app_search_view.dart';
+import 'package:music_player/widgets/mini_player.dart';
+import 'package:music_player/widgets/universal_song_tile.dart';
+import 'package:music_player/ui/shared/fast_artwork_widget.dart';
 
 void main() {
   setUp(() {
@@ -155,7 +163,7 @@ void main() {
     expect(appState.selectedTabIndex, 3);
   });
 
-  test('AppStateController.openSearch switches to tab 0 and clears inlineDetailContent', () {
+  test('AppStateController.openSearch preserves active tab and clears inlineDetailContent', () {
     TestWidgetsFlutterBinding.ensureInitialized();
     final appState = AppStateController.instance;
 
@@ -164,8 +172,9 @@ void main() {
     expect(appState.selectedTabIndex, 2);
     expect(appState.inlineDetailContent, isNotNull);
 
-    appState.openSearch();
-    expect(appState.selectedTabIndex, 0);
+    appState.openSearch(initialFilter: SearchFilter.artists);
+    // Contextual search opens in-place on current tab without resetting to 0
+    expect(appState.selectedTabIndex, 2);
     expect(appState.inlineDetailContent, isNull);
   });
 
@@ -250,6 +259,25 @@ void main() {
 
     expect(playbackController.songs.first.title, 'Updated Title');
     expect(playbackController.currentQueue.first.title, 'Updated Title');
+  });
+
+  test('PlaybackController insertAllInQueue and addAllToQueueEnd batch queue additions correctly', () {
+    final s1 = SongModel({'_id': 301, 'title': 'Base 1', '_data': '/m/1.mp3'});
+    final s2 = SongModel({'_id': 302, 'title': 'Base 2', '_data': '/m/2.mp3'});
+    final a1 = SongModel({'_id': 303, 'title': 'Next A', '_data': '/m/3.mp3'});
+    final a2 = SongModel({'_id': 304, 'title': 'Next B', '_data': '/m/4.mp3'});
+    final e1 = SongModel({'_id': 305, 'title': 'End 1', '_data': '/m/5.mp3'});
+    final e2 = SongModel({'_id': 306, 'title': 'End 2', '_data': '/m/6.mp3'});
+
+    playbackController.currentQueue = [s1, s2];
+
+    // Batch insert after current index (default index 0)
+    playbackController.insertAllInQueue([a1, a2]);
+    expect(playbackController.currentQueue.map((s) => s.id).toList(), [301, 303, 304, 302]);
+
+    // Batch append to queue end
+    playbackController.addAllToQueueEnd([e1, e2]);
+    expect(playbackController.currentQueue.map((s) => s.id).toList(), [301, 303, 304, 302, 305, 306]);
   });
 
   test('AppStateController updateSongsMetadataInPlace updates multiple songs and album artist in a single pass', () {
@@ -494,6 +522,650 @@ void main() {
       expect(appState.albumArtistsSort, AlbumArtistsSort.mostTracks);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('album_artists_sort_mode_v1'), AlbumArtistsSort.mostTracks.name);
+    });
+  });
+
+  group('AppEmptyState Widget Tests', () {
+    testWidgets('renders title, message, and invokes onAction', (tester) async {
+      var actionFired = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AppEmptyState(
+              icon: Icons.music_off_rounded,
+              title: 'No songs found',
+              message: 'Add songs to your library.',
+              actionLabel: 'Scan Library',
+              actionIcon: Icons.refresh_rounded,
+              onAction: () => actionFired = true,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('No songs found'), findsOneWidget);
+      expect(find.text('Add songs to your library.'), findsOneWidget);
+      expect(find.text('Scan Library'), findsOneWidget);
+      expect(find.byIcon(Icons.music_off_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.refresh_rounded), findsOneWidget);
+
+      await tester.tap(find.text('Scan Library'));
+      expect(actionFired, isTrue);
+    });
+  });
+
+  group('AlphabeticalBubbleScroller Tests', () {
+    testWidgets('renders scrollable child and responds without errors', (tester) async {
+      final controller = ScrollController();
+      final items = List.generate(30, (i) => 'Item ${String.fromCharCode(65 + (i % 26))} $i');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AlphabeticalBubbleScroller(
+              scrollController: controller,
+              itemCount: items.length,
+              sectionKeyOf: (index) => items[index],
+              child: ListView.builder(
+                controller: controller,
+                itemCount: items.length,
+                itemBuilder: (context, i) => ListTile(title: Text(items[i])),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Item A 0'), findsOneWidget);
+      controller.dispose();
+    });
+
+    testWidgets('supports numeric sort mode (years, track counts) and preserves sort order', (tester) async {
+      final controller = ScrollController();
+      // Descending years: 2024, 2020, 2015, 1999
+      final years = ['2024', '2020', '2015', '1999', '1984', '1975', '1968', '0'];
+      final items = List.generate(20, (i) => years[i % years.length]);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AlphabeticalBubbleScroller(
+              scrollController: controller,
+              itemCount: items.length,
+              isNumericSort: true,
+              sortKey: 'yearDesc',
+              sectionKeyOf: (index) => items[index],
+              child: ListView.builder(
+                controller: controller,
+                itemCount: items.length,
+                itemBuilder: (context, i) => ListTile(title: Text('Track $i (${items[i]})')),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Verify widget rendered
+      expect(find.byType(AlphabeticalBubbleScroller), findsOneWidget);
+
+      // Verify the rail ignores pointers when idle/hidden
+      final ignoreFinder = find.descendant(
+        of: find.byType(AlphabeticalBubbleScroller),
+        matching: find.byType(IgnorePointer),
+      );
+      expect(ignoreFinder, findsWidgets);
+
+      controller.dispose();
+    });
+
+    testWidgets('invalidates cached sections when sortKey or isNumericSort updates', (tester) async {
+      final controller = ScrollController();
+      final titles = ['Queen', 'Pink Floyd', 'Beatles', 'Abba', 'Zebra', 'Radiohead', 'Oasis', 'Muse', 'Nirvana', 'Kinks'];
+
+      // Initially alphabetical
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AlphabeticalBubbleScroller(
+              scrollController: controller,
+              itemCount: titles.length,
+              isNumericSort: false,
+              sortKey: 'titleAsc',
+              sectionKeyOf: (index) => titles[index],
+              child: ListView.builder(
+                controller: controller,
+                itemCount: titles.length,
+                itemBuilder: (context, i) => ListTile(title: Text(titles[i])),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(AlphabeticalBubbleScroller), findsOneWidget);
+
+      // Switch to numeric sort (e.g. track count) with same itemCount
+      final trackCounts = ['42', '30', '25', '18', '12', '8', '5', '3', '2', '1'];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AlphabeticalBubbleScroller(
+              scrollController: controller,
+              itemCount: trackCounts.length,
+              isNumericSort: true,
+              sortKey: 'mostTracks',
+              sectionKeyOf: (index) => trackCounts[index],
+              child: ListView.builder(
+                controller: controller,
+                itemCount: trackCounts.length,
+                itemBuilder: (context, i) => ListTile(title: Text('Album $i: ${trackCounts[i]} tracks')),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(AlphabeticalBubbleScroller), findsOneWidget);
+      controller.dispose();
+    });
+  });
+
+  group('Multi-Select NavigationStateMixin Tests', () {
+    test('selectAllSongs and deselectAllSongs work as expected', () {
+      final appState = AppStateController.instance;
+      appState.exitSelectionMode();
+      expect(appState.isSelectionMode, isFalse);
+      expect(appState.selectedSongIds, isEmpty);
+
+      appState.enterSelectionMode();
+      expect(appState.isSelectionMode, isTrue);
+
+      appState.selectAllSongs([101, 102, 103, 104]);
+      expect(appState.selectedSongIds, {101, 102, 103, 104});
+
+      appState.toggleSelectedSongId(102);
+      expect(appState.selectedSongIds, {101, 103, 104});
+
+      appState.deselectAllSongs();
+      expect(appState.selectedSongIds, isEmpty);
+      expect(appState.isSelectionMode, isTrue);
+
+      appState.exitSelectionMode();
+      expect(appState.isSelectionMode, isFalse);
+    });
+  });
+
+  group('Queue Page & Playlist Creation Tests', () {
+    test('createNewPlaylist correctly seeds with initialSongIds', () async {
+      final appState = AppStateController.instance;
+      final seededSongIds = [101, 102, 103];
+      final playlist = await appState.createNewPlaylist(
+        'Queue Saved Playlist',
+        initialSongIds: seededSongIds,
+      );
+
+      expect(playlist, isNotNull);
+      expect(playlist!.name, 'Queue Saved Playlist');
+      expect(playlist.songIds, seededSongIds);
+      expect(playlist.songIds.length, 3);
+
+      // Clean up
+      await appState.deletePlaylist(playlist);
+    });
+
+    test('formatPlaylistDuration formats remaining queue time correctly', () {
+      // 0 ms -> 0m
+      expect(formatPlaylistDuration(0), '0m');
+      // 59 seconds -> 0m
+      expect(formatPlaylistDuration(59000), '0m');
+      // 3 minutes -> 3m
+      expect(formatPlaylistDuration(180000), '3m');
+      // 1 hour 15 minutes -> 1h 15m
+      expect(formatPlaylistDuration(4500000), '1h 15m');
+    });
+  });
+
+  group('Material Expressive Architecture Tests', () {
+    test('buildTheme configures PredictiveBack on Android and Zoom on desktop', () {
+      const scheme = ColorScheme.light();
+      final theme = buildTheme(scheme, Brightness.light);
+
+      final androidBuilder = theme.pageTransitionsTheme.builders[TargetPlatform.android];
+      expect(androidBuilder, isA<PredictiveBackPageTransitionsBuilder>());
+
+      final linuxBuilder = theme.pageTransitionsTheme.builders[TargetPlatform.linux];
+      expect(linuxBuilder, isA<ZoomPageTransitionsBuilder>());
+
+      final windowsBuilder = theme.pageTransitionsTheme.builders[TargetPlatform.windows];
+      expect(windowsBuilder, isA<ZoomPageTransitionsBuilder>());
+
+      final macosBuilder = theme.pageTransitionsTheme.builders[TargetPlatform.macOS];
+      expect(macosBuilder, isA<ZoomPageTransitionsBuilder>());
+    });
+
+    testWidgets('SharedAxisTransition renders child in PageTransitionSwitcher', (tester) async {
+      final appState = AppStateController.instance;
+      appState.inlineDetailContent = const Text('Test Detail View');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PageTransitionSwitcher(
+              reverse: appState.inlineDetailContent == null,
+              transitionBuilder: (child, primary, secondary) => SharedAxisTransition(
+                animation: primary,
+                secondaryAnimation: secondary,
+                transitionType: SharedAxisTransitionType.scaled,
+                child: child,
+              ),
+              child: appState.inlineDetailContent != null
+                  ? KeyedSubtree(
+                      key: ValueKey(appState.inlineDetailContent.hashCode),
+                      child: appState.inlineDetailContent!,
+                    )
+                  : const SizedBox.shrink(key: ValueKey('empty')),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Test Detail View'), findsOneWidget);
+      expect(find.byType(SharedAxisTransition), findsOneWidget);
+
+      appState.inlineDetailContent = null;
+    });
+
+    testWidgets('MiniPlayerTile conditionally enables Hero based on enableHero flag', (tester) async {
+      final song = SongModel({
+        '_id': 999,
+        'title': 'Hero Song',
+        'artist': 'Hero Artist',
+        'duration': 180000,
+      });
+
+      // When enableHero is false (e.g. in detail pages), Hero is omitted
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MiniPlayerTile(
+              controller: playbackController,
+              song: song,
+              songs: [song],
+              currentIndex: 0,
+              onTap: () {},
+              onDismiss: () {},
+              onQueueChanged: (_) {},
+              enableHero: false,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(Hero), findsNothing);
+
+      // When enableHero is true (e.g. on HomePage), Hero tag is present
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MiniPlayerTile(
+              controller: playbackController,
+              song: song,
+              songs: [song],
+              currentIndex: 0,
+              onTap: () {},
+              onDismiss: () {},
+              onQueueChanged: (_) {},
+              enableHero: true,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(Hero), findsOneWidget);
+    });
+
+    testWidgets('Smooth slide between tabs with PageController and easeOutCubic', (tester) async {
+      final pageController = PageController(initialPage: 0);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PageView(
+              controller: pageController,
+              children: const [
+                Text('Tab 0 Library'),
+                Text('Tab 1 Albums'),
+                Text('Tab 2 Artists'),
+                Text('Tab 3 Playlists'),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Tab 0 Library'), findsOneWidget);
+      expect(find.text('Tab 1 Albums'), findsNothing);
+
+      // Animate smoothly to page 1 using Material Expressive curve
+      pageController.animateToPage(
+        1,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 160));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tab 1 Albums'), findsOneWidget);
+      expect(pageController.page, 1.0);
+    });
+
+    test('SearchHistoryManager saves, deduplicates, limits to 10, and clears recent queries', () async {
+      SharedPreferences.setMockInitialValues({});
+
+      await SearchHistoryManager.addQuery('The Beatles');
+      await SearchHistoryManager.addQuery('Queen');
+      await SearchHistoryManager.addQuery('the beatles'); // Case-insensitive deduplication
+
+      var history = await SearchHistoryManager.getHistory();
+      expect(history.length, 2);
+      expect(history.first, 'the beatles');
+      expect(history.last, 'Queen');
+
+      // Add 10 more to test max 10 cap
+      for (int i = 0; i < 10; i++) {
+        await SearchHistoryManager.addQuery('Artist $i');
+      }
+      history = await SearchHistoryManager.getHistory();
+      expect(history.length, 10);
+      expect(history.first, 'Artist 9');
+
+      // Remove single
+      await SearchHistoryManager.removeQuery('Artist 9');
+      history = await SearchHistoryManager.getHistory();
+      expect(history.contains('Artist 9'), isFalse);
+      expect(history.length, 9);
+
+      // Clear all
+      await SearchHistoryManager.clearHistory();
+      history = await SearchHistoryManager.getHistory();
+      expect(history.isEmpty, isTrue);
+    });
+
+    testWidgets('buildHighlightedText highlights matching query substring in primary color', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+          ),
+          home: Scaffold(
+            body: Center(
+              child: buildHighlightedText(
+                text: 'Here Comes The Sun',
+                query: 'sun',
+                baseStyle: const TextStyle(color: Colors.black, fontSize: 16),
+                highlightColor: Colors.deepPurple,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final textWidget = tester.widget<Text>(find.byType(Text));
+      final span = textWidget.textSpan! as TextSpan;
+      expect(span.children, isNotNull);
+      expect(span.children!.length, 2);
+      expect(span.children![0].toPlainText(), 'Here Comes The ');
+      expect(span.children![1].toPlainText(), 'Sun');
+      expect((span.children![1] as TextSpan).style?.color, Colors.deepPurple);
+      expect((span.children![1] as TextSpan).style?.fontWeight, FontWeight.w700);
+    });
+
+    testWidgets('AppSearchView renders with smart filter pre-selection and empty state on no match', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'search_recent_queries': ['Pink Floyd', 'Nirvana'],
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: const AppSearchView(
+            initialFilter: SearchFilter.albums,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify Albums filter chip is selected
+      final filterChips = tester.widgetList<FilterChip>(find.byType(FilterChip)).toList();
+      expect(filterChips.length, 4);
+      final albumsChip = filterChips.firstWhere((c) => (c.label as Row).children.any((w) => w is Text && w.data == 'Albums'));
+      expect(albumsChip.selected, isTrue);
+
+      // Verify Recent Searches are shown when query is empty
+      expect(find.text('Recent Searches'), findsOneWidget);
+      expect(find.text('Pink Floyd'), findsOneWidget);
+      expect(find.text('Nirvana'), findsOneWidget);
+
+      // Enter a query with no matches
+      await tester.enterText(find.byType(SearchBar), 'xyznonexistent123');
+      await tester.pumpAndSettle();
+
+      // Verify AppEmptyState is rendered
+      expect(find.byType(AppEmptyState), findsOneWidget);
+      expect(find.text('No results found'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(AppEmptyState),
+          matching: find.textContaining('xyznonexistent123'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    test('AppStateController.updateSongMetadataInPlace updates song lists in-place', () {
+      final appState = AppStateController.instance;
+      final original = SongModel({
+        '_id': 99999,
+        'title': 'Original Title',
+        'artist': 'Original Artist',
+        'album': 'Original Album',
+        '_data': '/storage/emulated/0/Music/track99999.mp3',
+      });
+      appState.songs = [original];
+      playbackController.songs = [original];
+      playbackController.currentQueue = [original];
+
+      final updated = SongModel({
+        '_id': 99999,
+        'title': 'Edited Title',
+        'artist': 'Edited Artist',
+        'album': 'Edited Album',
+        '_data': '/storage/emulated/0/Music/track99999.mp3',
+      });
+
+      appState.updateSongMetadataInPlace(updated);
+
+      expect(appState.songs.single.title, 'Edited Title');
+      expect(appState.songs.single.artist, 'Edited Artist');
+      expect(appState.songs.single.album, 'Edited Album');
+      expect(playbackController.songs.single.title, 'Edited Title');
+      expect(playbackController.currentQueue.single.title, 'Edited Title');
+    });
+
+    test('runWithPlaybackSuspendedForTagWrite executes action exactly once', () async {
+      int executionCount = 0;
+      await playbackController.runWithPlaybackSuspendedForTagWrite(
+        () async {
+          executionCount++;
+        },
+        targetFilePath: '/path/test_track.mp3',
+      );
+      expect(executionCount, 1);
+    });
+
+    group('UniversalSongTile Tests', () {
+      testWidgets('renders duration only once when showMetaDuration is false and trailing duration provided', (tester) async {
+        final song = SongModel({
+          '_id': 12345,
+          'title': 'Smart Playlist Track',
+          'artist': 'Test Artist',
+          'duration': 185000,
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: UniversalSongTile(
+                song: song,
+                subtitle: 'Test Artist',
+                showMetaDuration: false,
+                trailing: const Text('3:05'),
+              ),
+            ),
+          ),
+        );
+
+        // '3:05' should appear exactly once in the tree (in the trailing widget)
+        expect(find.text('3:05'), findsOneWidget);
+        expect(find.text('Smart Playlist Track'), findsOneWidget);
+        expect(find.text('Test Artist'), findsOneWidget);
+      });
+
+      testWidgets('renders duration in meta when showMetaDuration is true without trailing', (tester) async {
+        final song = SongModel({
+          '_id': 12346,
+          'title': 'Library Track',
+          'artist': 'Test Artist',
+          'duration': 185000,
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: UniversalSongTile(
+                song: song,
+                subtitle: 'Test Artist',
+                showMetaDuration: true,
+              ),
+            ),
+          ),
+        );
+
+        // Duration is shown in the meta row
+        expect(find.text('3:05'), findsOneWidget);
+      });
+
+      testWidgets('library song tile renders with 3-line layout inside 106.0 extent without overflow', (tester) async {
+        final song = SongModel({
+          '_id': 12347,
+          'title': 'Library Track With Full Tags',
+          'artist': 'Test Artist Name',
+          'album': 'Test Album Title',
+          'duration': 215000,
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                height: 106.0,
+                child: UniversalSongTile(
+                  song: song,
+                  title: song.title,
+                  subtitle: song.artist,
+                  meta: song.album,
+                  durationMs: song.duration,
+                  circularArtwork: true,
+                  artworkSize: 52,
+                  showArtworkBadges: true,
+                  showShadows: true,
+                  showMetaDuration: true,
+                  borderRadius: BorderRadius.circular(16),
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 4,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10.5,
+                  ),
+                  trailing: const Icon(Icons.more_vert_rounded),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('Library Track With Full Tags'), findsOneWidget);
+        expect(find.text('Test Artist Name'), findsOneWidget);
+        expect(find.text('Test Album Title'), findsOneWidget);
+        expect(find.text('3:35'), findsOneWidget);
+      });
+    });
+
+    group('Smooth Transition Tests', () {
+      testWidgets('FastArtworkWidget embeds AnimatedSwitcher for smooth transitions', (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: FastArtworkWidget(
+                id: 9999,
+                type: ArtworkType.ALBUM,
+                width: 100,
+                height: 100,
+                nullArtworkWidget: const Icon(Icons.album_rounded),
+              ),
+            ),
+          ),
+        );
+
+        expect(find.byType(AnimatedSwitcher), findsOneWidget);
+        final animatedSwitcher = tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher));
+        expect(animatedSwitcher.duration, const Duration(milliseconds: 240));
+        expect(animatedSwitcher.switchInCurve, Curves.easeOutCubic);
+        expect(find.byIcon(Icons.album_rounded), findsOneWidget);
+      });
+
+      testWidgets('Background gradient uses AnimatedSwitcher for soft blooming appearance', (tester) async {
+        const top = Colors.deepPurple;
+        const mid = Colors.purple;
+        const accent = Colors.pink;
+        const surface = Colors.black;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Stack(
+                children: [
+                  Positioned.fill(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 320),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: DecoratedBox(
+                        key: const ValueKey('test_gradient'),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [top, mid, accent, surface],
+                            stops: [0.0, 0.35, 0.70, 1.0],
+                          ),
+                        ),
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        expect(find.byType(AnimatedSwitcher), findsOneWidget);
+        expect(find.byKey(const ValueKey('test_gradient')), findsOneWidget);
+      });
     });
   });
 }

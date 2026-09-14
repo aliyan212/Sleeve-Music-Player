@@ -95,7 +95,11 @@ ThemeData buildTheme(ColorScheme scheme, Brightness brightness) {
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: ZoomPageTransitionsBuilder(),
+          TargetPlatform.linux: ZoomPageTransitionsBuilder(),
+          TargetPlatform.windows: ZoomPageTransitionsBuilder(),
         },
       ),
       navigationBarTheme: NavigationBarThemeData(
@@ -107,9 +111,10 @@ ThemeData buildTheme(ColorScheme scheme, Brightness brightness) {
         // Use a smaller label and soften unselected color; selected label slightly bolder
         labelTextStyle: WidgetStateProperty.resolveWith<TextStyle?>((states) {
           final selected = states.contains(WidgetState.selected);
-          return textTheme.labelSmall?.copyWith(
+          return textTheme.labelMedium?.copyWith(
+            fontSize: 12.5,
             color: selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
           );
         }),
         // Consistent, slightly smaller icons and color resolve

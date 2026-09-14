@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
 import '../services/playback_controller.dart';
+import '../ui/shared/app_action_sheet.dart';
 import '../ui/shared/fast_artwork_widget.dart';
 import '../dialogs/tag_editor_dialog.dart';
 import '../dialogs/lyrics_editor_dialog.dart';
@@ -26,20 +27,6 @@ Future<void> showSongOptionsSheet({
       artistName.isNotEmpty && artistName.toLowerCase() != 'unknown artist';
 
   final cs = Theme.of(context).colorScheme;
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  final sheetBg = cs.surface;
-  final sectionLabelStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
-    color: cs.onSurfaceVariant,
-    fontWeight: FontWeight.w700,
-    letterSpacing: 0.18,
-  );
-
-  Widget sectionLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-      child: Text(text, style: sectionLabelStyle),
-    );
-  }
 
   Future<void> playNext() async {
     if (playbackController.player.currentIndex == null || playbackController.player.audioSources.isEmpty) {
@@ -67,215 +54,142 @@ Future<void> showSongOptionsSheet({
     }
   }
 
-  await showModalBottomSheet(
-    context: context,
-    showDragHandle: true,
-    backgroundColor: sheetBg,
-    isScrollControlled: true,
-    builder: (ctx) {
-      return SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.78,
-          ),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.only(bottom: 12),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-                child: Row(
-                  children: [
-                    ClipOval(
-                      child: FastArtworkWidget(
-                        id: song.id,
-                        type: ArtworkType.AUDIO,
-                        width: 52,
-                        height: 52,
-                        nullArtworkWidget: Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: cs.surfaceContainerHighest,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.music_note_rounded,
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.12,
-                                ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            song.artist ?? 'Unknown Artist',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Divider(
-                  height: 1,
-                  color: cs.outlineVariant.withValues(alpha: isDark ? 0.35 : 0.55),
-                ),
-              ),
-
-              sectionLabel('Selection'),
-              ListTile(
-                leading: const Icon(Icons.checklist_rounded),
-                title: const Text('Select'),
-                subtitle: const Text(
-                  'Select multiple songs to add to a playlist',
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  HapticFeedback.selectionClick();
-                  onEnterSelectionMode(song.id);
-                },
-              ),
-
-              sectionLabel('Playback'),
-              ListTile(
-                leading: const Icon(Icons.play_arrow_rounded),
-                title: const Text('Play'),
-                subtitle: const Text('Start playing this track'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  HapticFeedback.selectionClick();
-                  onPlaySong();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.open_in_full_rounded),
-                title: const Text('Open Now Playing'),
-                subtitle: const Text('Jump to the player screen'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  onOpenNowPlaying(song);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.playlist_add_rounded),
-                title: const Text('Play next'),
-                subtitle: const Text('Insert after the current track'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  playNext();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.queue_music_rounded),
-                title: const Text('Add to queue'),
-                subtitle: const Text('Append to the end of the queue'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  addToQueue();
-                },
-              ),
-
-              if (hasAlbum || hasArtist) ...[
-                sectionLabel('Library'),
-                if (hasAlbum)
-                  ListTile(
-                    leading: const Icon(Icons.album_rounded),
-                    title: const Text('Open album'),
-                    subtitle: const Text('View all tracks in this album'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      HapticFeedback.selectionClick();
-                      onOpenAlbum(song);
-                    },
-                  ),
-                if (hasArtist)
-                  ListTile(
-                    leading: const Icon(Icons.person_rounded),
-                    title: const Text('Open artist'),
-                    subtitle: const Text('View albums by this artist'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      HapticFeedback.selectionClick();
-                      onOpenArtist(song);
-                    },
-                  ),
-              ],
-
-              sectionLabel('Edit'),
-              ListTile(
-                leading: const Icon(Icons.edit_rounded),
-                title: const Text('Edit tags'),
-                subtitle: const Text('Title, artist, album, cover art'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  HapticFeedback.selectionClick();
-                  await showDialog<bool>(
-                    context: context,
-                    builder: (dctx) => TagEditorDialog(
-                      song: song,
-                      onSaved: () {},
-                      onSongUpdated: onSongUpdated,
-                      runWithPlaybackSuspended: (action) =>
-                          runWithPlaybackSuspended(
-                            action,
-                            targetFilePath: song.data,
-                          ),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.lyrics_rounded),
-                title: const Text('Edit lyrics'),
-                subtitle: const Text('Paste lyrics or synced LRC'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  HapticFeedback.selectionClick();
-                  await showDialog<bool>(
-                    context: context,
-                    builder: (dctx) => LyricsEditorDialog(
-                      song: song,
-                      currentLyrics: null,
-                      onSaved: () {},
-                      onLyricsSaved: (_) {},
-                      runWithPlaybackSuspended: (action) =>
-                          runWithPlaybackSuspended(
-                            action,
-                            targetFilePath: song.data,
-                          ),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
+  final headerThumbnail = ClipOval(
+    child: FastArtworkWidget(
+      id: song.id,
+      type: ArtworkType.AUDIO,
+      width: 48,
+      height: 48,
+      nullArtworkWidget: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          shape: BoxShape.circle,
         ),
-      );
-    },
+        child: Icon(
+          Icons.music_note_rounded,
+          color: cs.onSurfaceVariant,
+        ),
+      ),
+    ),
+  );
+
+  final subtitleParts = <String>[];
+  if (hasArtist) subtitleParts.add(artistName);
+  if (hasAlbum && song.album != null && song.album!.trim().isNotEmpty) {
+    subtitleParts.add(song.album!.trim());
+  }
+  final headerSubtitle = subtitleParts.isNotEmpty
+      ? subtitleParts.join(' • ')
+      : (song.artist ?? 'Unknown Artist');
+
+  final sections = <AppActionSection>[
+    AppActionSection(
+      title: 'Selection',
+      items: [
+        AppActionItem(
+          icon: Icons.checklist_rounded,
+          title: 'Select',
+          subtitle: 'Select multiple songs to add to a playlist',
+          onTap: () => onEnterSelectionMode(song.id),
+        ),
+      ],
+    ),
+    AppActionSection(
+      title: 'Playback',
+      items: [
+        AppActionItem(
+          icon: Icons.play_arrow_rounded,
+          title: 'Play',
+          subtitle: 'Start playing this track',
+          onTap: onPlaySong,
+        ),
+        AppActionItem(
+          icon: Icons.playlist_add_rounded,
+          title: 'Play next',
+          subtitle: 'Insert after the current track',
+          onTap: playNext,
+        ),
+        AppActionItem(
+          icon: Icons.queue_music_rounded,
+          title: 'Add to queue',
+          subtitle: 'Append to the end of the queue',
+          onTap: addToQueue,
+        ),
+      ],
+    ),
+    if (hasAlbum || hasArtist)
+      AppActionSection(
+        title: 'Library',
+        items: [
+          if (hasAlbum)
+            AppActionItem(
+              icon: Icons.album_rounded,
+              title: 'Open album',
+              subtitle: 'View all tracks in this album',
+              onTap: () => onOpenAlbum(song),
+            ),
+          if (hasArtist)
+            AppActionItem(
+              icon: Icons.person_rounded,
+              title: 'Open artist',
+              subtitle: 'View albums by this artist',
+              onTap: () => onOpenArtist(song),
+            ),
+        ],
+      ),
+    AppActionSection(
+      title: 'Edit',
+      items: [
+        AppActionItem(
+          icon: Icons.edit_rounded,
+          title: 'Edit tags',
+          subtitle: 'Title, artist, album, cover art',
+          onTap: () async {
+            await showDialog<bool>(
+              context: context,
+              builder: (dctx) => TagEditorDialog(
+                song: song,
+                onSaved: () {},
+                onSongUpdated: onSongUpdated,
+                runWithPlaybackSuspended: (action) => runWithPlaybackSuspended(
+                  action,
+                  targetFilePath: song.data,
+                ),
+              ),
+            );
+          },
+        ),
+        AppActionItem(
+          icon: Icons.lyrics_rounded,
+          title: 'Edit lyrics',
+          subtitle: 'Paste lyrics or synced LRC',
+          onTap: () async {
+            await showDialog<bool>(
+              context: context,
+              builder: (dctx) => LyricsEditorDialog(
+                song: song,
+                currentLyrics: null,
+                onSaved: () {},
+                onLyricsSaved: (_) {},
+                runWithPlaybackSuspended: (action) => runWithPlaybackSuspended(
+                  action,
+                  targetFilePath: song.data,
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    ),
+  ];
+
+  await showAppActionSheet(
+    context: context,
+    headerThumbnail: headerThumbnail,
+    headerTitle: song.title,
+    headerSubtitle: headerSubtitle,
+    sections: sections,
   );
 }

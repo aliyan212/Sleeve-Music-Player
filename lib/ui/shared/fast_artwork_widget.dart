@@ -99,7 +99,25 @@ Uint8List? peekCachedArtworkBytes(
   ArtworkType type = ArtworkType.AUDIO,
   int size = 200,
 }) {
-  return peekCachedArtworkBytesByKey(getArtworkKey(id, type, size), size);
+  final exact = peekCachedArtworkBytesByKey(getArtworkKey(id, type, size), size);
+  if (exact != null && exact.isNotEmpty) return exact;
+
+  // Multi-resolution fallback: if requested size is not yet cached,
+  // return any cached resolution for this id and type immediately
+  // to avoid blank frames while the target resolution is loading.
+  final legacyKey = '${type.name}_$id';
+  final thumbLegacy = CachingService().thumbnailCache[legacyKey];
+  if (thumbLegacy != null && thumbLegacy.isNotEmpty) return thumbLegacy;
+  final highLegacy = CachingService().highResCache[legacyKey];
+  if (highLegacy != null && highLegacy.isNotEmpty) return highLegacy;
+
+  for (final s in const [300, 200, 400, 500, 900]) {
+    if (s == size) continue;
+    final other = peekCachedArtworkBytesByKey(getArtworkKey(id, type, s), s);
+    if (other != null && other.isNotEmpty) return other;
+  }
+
+  return null;
 }
 
 final Map<String, Future<Uint8List?>> _inFlightArtwork = {};
@@ -152,6 +170,8 @@ Future<Uint8List?> queryArtworkBytesCached(
 class FastArtworkWidget extends StatefulWidget {
   final int id;
   final ArtworkType type;
+  final int? fallbackId;
+  final ArtworkType? fallbackType;
   final double width;
   final double height;
   final Widget nullArtworkWidget;
@@ -164,11 +184,13 @@ class FastArtworkWidget extends StatefulWidget {
     super.key,
     required this.id,
     required this.type,
+    this.fallbackId,
+    this.fallbackType,
     required this.width,
     required this.height,
     required this.nullArtworkWidget,
-    this.size = 200,
-    this.quality = 80,
+    this.size = 300,
+    this.quality = 95,
     this.artworkFit = BoxFit.cover,
     this.keepOldArtwork = true,
   });
@@ -184,6 +206,14 @@ class _FastArtworkWidgetState extends State<FastArtworkWidget> {
   void initState() {
     super.initState();
     artworkRevisionNotifier.addListener(_onArtworkRevisionChanged);
+    _bytes = peekCachedArtworkBytes(widget.id, type: widget.type, size: widget.size);
+    if (_bytes == null && widget.fallbackId != null && widget.fallbackId! > 0) {
+      _bytes = peekCachedArtworkBytes(
+        widget.fallbackId!,
+        type: widget.fallbackType ?? ArtworkType.ALBUM,
+        size: widget.size,
+      );
+    }
     _fetchArtwork();
   }
 
@@ -201,7 +231,11 @@ class _FastArtworkWidgetState extends State<FastArtworkWidget> {
   @override
   void didUpdateWidget(covariant FastArtworkWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.id != widget.id || oldWidget.type != widget.type || oldWidget.key != widget.key) {
+    if (oldWidget.id != widget.id ||
+        oldWidget.type != widget.type ||
+        oldWidget.fallbackId != widget.fallbackId ||
+        oldWidget.fallbackType != widget.fallbackType ||
+        oldWidget.key != widget.key) {
       if (!widget.keepOldArtwork) {
         setState(() => _bytes = null);
       }
@@ -230,10 +264,44 @@ class _FastArtworkWidgetState extends State<FastArtworkWidget> {
       quality: widget.quality,
     ).then((bytes) {
       if (!mounted) return;
-      if (getArtworkKey(widget.id, widget.type, widget.size) != key) return;
-      if (_bytes != bytes) {
-        setState(() {
-          _bytes = bytes;
+      if (bytes != null && bytes.isNotEmpty) {
+        if (getArtworkKey(widget.id, widget.type, widget.size) != key) return;
+        if (_bytes != bytes) {
+          setState(() {
+            _bytes = bytes;
+          });
+        }
+        return;
+      }
+
+      // If primary artwork returned no bytes, try fallback if provided
+      if (widget.fallbackId != null && widget.fallbackId! > 0) {
+        final fbType = widget.fallbackType ?? ArtworkType.ALBUM;
+        final fbKey = getArtworkKey(widget.fallbackId!, fbType, widget.size);
+        if (hasCachedArtworkBytes(widget.fallbackId!, type: fbType, size: widget.size)) {
+          final fbCached = peekCachedArtworkBytes(widget.fallbackId!, type: fbType, size: widget.size);
+          if (fbCached != null && fbCached.isNotEmpty) {
+            if (_bytes != fbCached) {
+              setState(() {
+                _bytes = fbCached;
+              });
+            }
+            return;
+          }
+        }
+        queryArtworkBytesCached(
+          widget.fallbackId!,
+          type: fbType,
+          size: widget.size,
+          quality: widget.quality,
+        ).then((fbBytes) {
+          if (!mounted) return;
+          if (getArtworkKey(widget.fallbackId!, fbType, widget.size) != fbKey) return;
+          if (_bytes != fbBytes) {
+            setState(() {
+              _bytes = fbBytes;
+            });
+          }
         });
       }
     });
@@ -241,20 +309,35 @@ class _FastArtworkWidgetState extends State<FastArtworkWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final Widget currentWidget;
     if (_bytes != null && _bytes!.isNotEmpty) {
-      final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
-      return Image.memory(
+      final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 2.0;
+      final targetCacheWidth = (widget.width * dpr * 1.5).round();
+      final targetCacheHeight = (widget.height * dpr * 1.5).round();
+      currentWidget = Image.memory(
         _bytes!,
+        key: ValueKey<int>(_bytes.hashCode),
         width: widget.width,
         height: widget.height,
-        cacheWidth: (widget.width * dpr).round(),
-        cacheHeight: (widget.height * dpr).round(),
+        cacheWidth: targetCacheWidth > 0 ? targetCacheWidth : null,
+        cacheHeight: targetCacheHeight > 0 ? targetCacheHeight : null,
         fit: widget.artworkFit,
         gaplessPlayback: true,
-        filterQuality: FilterQuality.medium,
+        filterQuality: FilterQuality.high,
         errorBuilder: (_, _, _) => widget.nullArtworkWidget,
       );
+    } else {
+      currentWidget = KeyedSubtree(
+        key: const ValueKey<String>('null_artwork'),
+        child: widget.nullArtworkWidget,
+      );
     }
-    return widget.nullArtworkWidget;
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 240),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      child: currentWidget,
+    );
   }
 }

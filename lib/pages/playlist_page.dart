@@ -14,9 +14,12 @@ import '../ui/shared/fast_artwork_widget.dart';
 import '../utils/format_utils.dart';
 import '../utils/song_sort_utils.dart';
 import '../ui/shared/bottom_bars_gutter.dart';
+import '../ui/shared/app_action_sheet.dart';
 import '../widgets/universal_song_tile.dart';
 import '../dialogs/add_songs_sheet.dart';
 import '../widgets/multi_select_action_bar.dart';
+import '../ui/shared/app_empty_state.dart';
+import 'now_playing_page.dart';
 export 'smart_playlist_page.dart';
 
 enum PlaylistSort { manual, artist, albumArtist, year, albumArtistYear }
@@ -68,6 +71,16 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
   bool _isSearching = false;
   bool _selectionMode = false;
   final Set<int> _selectedSongIds = <int>{};
+  late final ScrollController _scrollController;
+  bool _isScrolled = false;
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients) return;
+    final scrolled = _scrollController.offset > 50;
+    if (scrolled != _isScrolled) {
+      setState(() => _isScrolled = scrolled);
+    }
+  }
 
   static final Map<int, ({Color primary, Color secondary, Color tertiary})>
   _playlistPaletteCache = {};
@@ -134,6 +147,12 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
     if (leadSongId == _paletteSongId && _paletteFuture != null) return;
     _paletteSongId = leadSongId;
     if (leadSongId != null) {
+      if (!_playlistPaletteCache.containsKey(leadSongId)) {
+        final seeded = NowPlayingPage.paletteCache[leadSongId];
+        if (seeded != null) {
+          _playlistPaletteCache[leadSongId] = seeded;
+        }
+      }
       _paletteFuture = _loadPlaylistPalette(leadSongId);
     } else {
       _paletteFuture = null;
@@ -143,6 +162,8 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
   @override
   void initState() {
     super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_handleScroll);
     _songIds = List<int>.from(widget.initialSongIds);
     _manualSongIds = List<int>.from(widget.initialSongIds);
     _searchController.addListener(() {
@@ -154,6 +175,8 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -381,6 +404,7 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
 
   Future<void> _applyPlaylistSort(PlaylistSort mode) async {
     if (!mounted) return;
+    HapticFeedback.selectionClick();
     final map = _idToSong();
 
     if (mode == PlaylistSort.manual) {
@@ -533,6 +557,124 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
     );
   }
 
+  void _showPlaylistOptionsMenu(BuildContext context, List<SongModel> allSongs, int totalMs) {
+    final cs = Theme.of(context).colorScheme;
+    final firstSongId = allSongs.isNotEmpty ? allSongs.first.id : 0;
+    final headerThumbnail = ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: firstSongId > 0
+          ? FastArtworkWidget(
+              id: firstSongId,
+              type: ArtworkType.AUDIO,
+              width: 48,
+              height: 48,
+              nullArtworkWidget: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.playlist_play_rounded, color: cs.onSurfaceVariant),
+              ),
+            )
+          : Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.playlist_play_rounded, color: cs.onSurfaceVariant),
+            ),
+    );
+
+    final headerSubtitle = '${allSongs.length} tracks • ${formatPlaylistDuration(totalMs)}';
+
+    showAppActionSheet<void>(
+      context: context,
+      headerThumbnail: headerThumbnail,
+      headerTitle: widget.playlistName,
+      headerSubtitle: headerSubtitle,
+      sections: [
+        AppActionSection(
+          title: 'Playlist Options',
+          items: [
+            AppActionItem(
+              icon: Icons.add_rounded,
+              title: 'Add songs',
+              subtitle: 'Add more tracks to this playlist',
+              onTap: _addSongs,
+            ),
+            AppActionItem(
+              icon: Icons.copy_rounded,
+              title: 'Copy track list',
+              subtitle: 'Copy track names to clipboard',
+              onTap: () => _copyPlaylistText(allSongs),
+            ),
+            AppActionItem(
+              icon: Icons.playlist_add_check_rounded,
+              title: 'Copy M3U',
+              subtitle: 'Copy M3U playlist format to clipboard',
+              onTap: () => _copyPlaylistM3u(allSongs),
+            ),
+            AppActionItem(
+              icon: Icons.file_download_outlined,
+              title: 'Export M3U file',
+              subtitle: 'Save M3U file to device storage',
+              onTap: () => _exportPlaylistM3u(allSongs),
+            ),
+          ],
+        ),
+        AppActionSection(
+          title: 'Sort Playlist',
+          items: [
+            AppActionItem(
+              icon: Icons.drag_indicator_rounded,
+              title: 'Manual (Custom)',
+              trailing: _playlistSort == PlaylistSort.manual
+                  ? Icon(Icons.check_rounded, color: cs.primary, size: 20)
+                  : null,
+              onTap: () => _applyPlaylistSort(PlaylistSort.manual),
+            ),
+            AppActionItem(
+              icon: Icons.person_outline_rounded,
+              title: 'Artist',
+              trailing: _playlistSort == PlaylistSort.artist
+                  ? Icon(Icons.check_rounded, color: cs.primary, size: 20)
+                  : null,
+              onTap: () => _applyPlaylistSort(PlaylistSort.artist),
+            ),
+            AppActionItem(
+              icon: Icons.album_outlined,
+              title: 'Album Artist',
+              trailing: _playlistSort == PlaylistSort.albumArtist
+                  ? Icon(Icons.check_rounded, color: cs.primary, size: 20)
+                  : null,
+              onTap: () => _applyPlaylistSort(PlaylistSort.albumArtist),
+            ),
+            AppActionItem(
+              icon: Icons.calendar_today_rounded,
+              title: 'Year',
+              trailing: _playlistSort == PlaylistSort.year
+                  ? Icon(Icons.check_rounded, color: cs.primary, size: 20)
+                  : null,
+              onTap: () => _applyPlaylistSort(PlaylistSort.year),
+            ),
+            AppActionItem(
+              icon: Icons.auto_awesome_rounded,
+              title: 'Album Artist / Year',
+              trailing: _playlistSort == PlaylistSort.albumArtistYear
+                  ? Icon(Icons.check_rounded, color: cs.primary, size: 20)
+                  : null,
+              onTap: () => _applyPlaylistSort(PlaylistSort.albumArtistYear),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -567,9 +709,12 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
         !_selectionMode &&
         !_isSearching;
 
-    final content = FutureBuilder<({Color primary, Color secondary, Color tertiary})?>(
-      future: _paletteFuture,
-      builder: (context, snap) {
+    final content = Material(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: FutureBuilder<({Color primary, Color secondary, Color tertiary})?>(
+        future: _paletteFuture,
+        initialData: leadSongId != null ? _playlistPaletteCache[leadSongId] : null,
+        builder: (context, snap) {
         final p = snap.data;
         final bgA = p?.primary;
         final bgB = p?.secondary;
@@ -596,30 +741,51 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
         return Stack(
           children: [
             Positioned.fill(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 500),
-                curve: Curves.easeOutCubic,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [top, mid, accent, cs.surface],
-                    stops: const [0.0, 0.38, 0.72, 1.0],
-                  ),
-                ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 320),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: p != null
+                    ? DecoratedBox(
+                        key: ValueKey<int>(Object.hash(bgA, bgB)),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [top, mid, accent, cs.surface],
+                            stops: const [0.0, 0.38, 0.72, 1.0],
+                          ),
+                        ),
+                        child: const SizedBox.expand(),
+                      )
+                    : const SizedBox.expand(key: ValueKey<String>('empty_palette')),
               ),
             ),
-            CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverAppBar(
-                  pinned: true,
-                  elevation: 0,
-                  scrolledUnderElevation: 0,
-                  backgroundColor: Colors.transparent,
-                  surfaceTintColor: Colors.transparent,
-                  forceMaterialTransparency: true,
-                  foregroundColor: cs.onSurface,
+            StreamBuilder<int?>(
+              stream: widget.player.currentIndexStream,
+              builder: (context, _) {
+                return StreamBuilder<bool>(
+                  stream: widget.player.playingStream,
+                  builder: (context, _) {
+                    final currentSongId = playbackController.currentSongId;
+                    final isAudioPlaying = widget.player.playing;
+
+                    return CustomScrollView(
+                      controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        SliverAppBar(
+                          pinned: true,
+                          elevation: 0,
+                          scrolledUnderElevation: 0,
+                          backgroundColor: _isScrolled
+                              ? Color.alphaBlend(
+                                  cs.surface.withValues(alpha: isDark ? 0.92 : 0.96),
+                                  top,
+                                )
+                              : Colors.transparent,
+                          surfaceTintColor: Colors.transparent,
+                          foregroundColor: cs.onSurface,
                   leading: widget.embeddedInHome
                       ? IconButton(
                           tooltip: 'Back',
@@ -655,7 +821,18 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                                 fontWeight: FontWeight.bold,
                               ),
                             )
-                          : null),
+                          : AnimatedOpacity(
+                              duration: const Duration(milliseconds: 220),
+                              opacity: _isScrolled ? 1.0 : 0.0,
+                              child: Text(
+                                widget.playlistName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            )),
                   actions: [
                     if (_isSearching) ...[
                       IconButton(
@@ -686,6 +863,22 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                         onCancel: _exitSelectionMode,
                       ),
                     ] else ...[
+                      if (_isScrolled) ...[
+                        IconButton(
+                          tooltip: 'Play',
+                          icon: const Icon(Icons.play_arrow_rounded),
+                          onPressed: songs.isEmpty
+                              ? null
+                              : () async => widget.playFromQueue(songs, 0),
+                        ),
+                        IconButton(
+                          tooltip: 'Shuffle',
+                          icon: const Icon(Icons.shuffle_rounded),
+                          onPressed: allSongs.isEmpty
+                              ? null
+                              : () async => _playShuffledQueue(allSongs),
+                        ),
+                      ],
                       IconButton(
                         tooltip: 'Search in playlist',
                         icon: const Icon(Icons.search_rounded),
@@ -693,176 +886,10 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                           setState(() => _isSearching = true);
                         },
                       ),
-                      PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert_rounded),
+                      IconButton(
                         tooltip: 'More options',
-                        onSelected: (val) {
-                          HapticFeedback.selectionClick();
-                          if (val == 'add') {
-                            _addSongs();
-                          } else if (val == 'copy_list') {
-                            _copyPlaylistText(allSongs);
-                          } else if (val == 'copy_m3u') {
-                            _copyPlaylistM3u(allSongs);
-                          } else if (val == 'export_m3u') {
-                            _exportPlaylistM3u(allSongs);
-                          } else if (val.startsWith('sort_')) {
-                            final sortName = val.substring(5);
-                            final sortType = PlaylistSort.values.firstWhere(
-                              (e) => e.name == sortName,
-                              orElse: () => PlaylistSort.manual,
-                            );
-                            _applyPlaylistSort(sortType);
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          PopupMenuItem(
-                            value: 'add',
-                            child: Row(
-                              children: [
-                                Icon(Icons.add_rounded, color: cs.onSurfaceVariant, size: 20),
-                                const SizedBox(width: 12),
-                                const Text('Add songs'),
-                              ],
-                            ),
-                          ),
-                          const PopupMenuDivider(),
-                          PopupMenuItem(
-                            enabled: false,
-                            child: Text(
-                              'SORT BY',
-                              style: TextStyle(
-                                color: cs.primary,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                                letterSpacing: 0.8,
-                              ),
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'sort_manual',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _playlistSort == PlaylistSort.manual
-                                      ? Icons.check_rounded
-                                      : Icons.drag_indicator_rounded,
-                                  color: _playlistSort == PlaylistSort.manual
-                                      ? cs.primary
-                                      : cs.onSurfaceVariant,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 12),
-                                const Text('Custom order (drag)'),
-                                const Text('Custom Order (Drag)'),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'sort_artist',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _playlistSort == PlaylistSort.artist
-                                      ? Icons.check_rounded
-                                      : Icons.person_outline_rounded,
-                                  color: _playlistSort == PlaylistSort.artist
-                                      ? cs.primary
-                                      : cs.onSurfaceVariant,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 12),
-                                const Text('Artist'),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'sort_albumArtist',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _playlistSort == PlaylistSort.albumArtist
-                                      ? Icons.check_rounded
-                                      : Icons.album_outlined,
-                                  color: _playlistSort == PlaylistSort.albumArtist
-                                      ? cs.primary
-                                      : cs.onSurfaceVariant,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 12),
-                                const Text('Album Artist'),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'sort_year',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _playlistSort == PlaylistSort.year
-                                      ? Icons.check_rounded
-                                      : Icons.calendar_today_rounded,
-                                  color: _playlistSort == PlaylistSort.year
-                                      ? cs.primary
-                                      : cs.onSurfaceVariant,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 12),
-                                const Text('Year'),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'sort_albumArtistYear',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _playlistSort == PlaylistSort.albumArtistYear
-                                      ? Icons.check_rounded
-                                      : Icons.auto_awesome_rounded,
-                                  color: _playlistSort == PlaylistSort.albumArtistYear
-                                      ? cs.primary
-                                      : cs.onSurfaceVariant,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 12),
-                                const Text('Album Artist & Year'),
-                                const Text('Album Artist / Year'),
-                              ],
-                            ),
-                          ),
-                          const PopupMenuDivider(),
-                          PopupMenuItem(
-                            value: 'copy_list',
-                            child: Row(
-                              children: [
-                                Icon(Icons.copy_rounded, color: cs.onSurfaceVariant, size: 20),
-                                const SizedBox(width: 12),
-                                const Text('Copy track list'),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'copy_m3u',
-                            child: Row(
-                              children: [
-                                Icon(Icons.playlist_add_check_rounded, color: cs.onSurfaceVariant, size: 20),
-                                const SizedBox(width: 12),
-                                const Text('Copy M3U'),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'export_m3u',
-                            child: Row(
-                              children: [
-                                Icon(Icons.file_download_outlined, color: cs.onSurfaceVariant, size: 20),
-                                const SizedBox(width: 12),
-                                const Text('Export M3U file'),
-                              ],
-                            ),
-                          ),
-                        ],
+                        icon: const Icon(Icons.more_horiz_rounded),
+                        onPressed: () => _showPlaylistOptionsMenu(context, allSongs, totalMs),
                       ),
                     ],
                   ],
@@ -870,108 +897,111 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                 if (!_isSearching)
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                      padding: const EdgeInsets.fromLTRB(20, 6, 20, 18),
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              DecoratedBox(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.12),
-                                      blurRadius: 18,
-                                      offset: const Offset(0, 8),
-                                    ),
-                                  ],
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: SizedBox(
-                                    width: 114,
-                                    height: 114,
-                                    child: allSongs.isEmpty
-                                        ? Container(
-                                            decoration: BoxDecoration(
-                                              color: cs.surfaceContainerHighest,
-                                            ),
-                                            child: Icon(
-                                              Icons.playlist_play_rounded,
-                                              color: cs.onSurfaceVariant,
-                                              size: 48,
-                                            ),
-                                          )
-                                        : FastArtworkWidget(
-                                            id: allSongs.first.id,
-                                            type: ArtworkType.AUDIO,
-                                            width: 114,
-                                            height: 114,
-                                            artworkFit: BoxFit.cover,
-                                            nullArtworkWidget: Container(
-                                              color: cs.surfaceContainerHighest,
-                                              child: Icon(
-                                                Icons.playlist_play_rounded,
-                                                color: cs.onSurfaceVariant,
-                                                size: 48,
-                                              ),
-                                            ),
-                                          ),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 320),
+                            curve: Curves.easeOutCubic,
+                            width: 160,
+                            height: 160,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (bgA ?? Colors.black).withValues(
+                                    alpha: isDark ? 0.40 : 0.16,
                                   ),
+                                  blurRadius: 28,
+                                  offset: const Offset(0, 12),
+                                  spreadRadius: -2,
                                 ),
-                              ),
-                              const SizedBox(width: 18),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      widget.playlistName,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: -0.5,
-                                        color: cs.onSurface,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      subtitle,
-                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(24),
+                              child: allSongs.isEmpty
+                                  ? Container(
+                                      color: cs.surfaceContainerHighest,
+                                      child: Icon(
+                                        Icons.playlist_play_rounded,
                                         color: cs.onSurfaceVariant,
-                                        fontWeight: FontWeight.w600,
+                                        size: 64,
+                                      ),
+                                    )
+                                  : FastArtworkWidget(
+                                      id: allSongs.first.id,
+                                      type: ArtworkType.AUDIO,
+                                      width: 160,
+                                      height: 160,
+                                      artworkFit: BoxFit.cover,
+                                      nullArtworkWidget: Container(
+                                        color: cs.surfaceContainerHighest,
+                                        child: Icon(
+                                          Icons.playlist_play_rounded,
+                                          color: cs.onSurfaceVariant,
+                                          size: 64,
+                                        ),
                                       ),
                                     ),
-                                    if (_playlistSort != PlaylistSort.manual) ...[
-                                      const SizedBox(height: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: cs.secondaryContainer.withValues(alpha: 
-                                            isDark ? 0.35 : 0.6,
-                                          ),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          'Sorted: ${_playlistSortLabel(_playlistSort)}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                            color: cs.onSecondaryContainer,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
+                          const SizedBox(height: 16),
+                          Text(
+                            widget.playlistName,
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.5,
+                              color: cs.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            subtitle,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (_playlistSort != PlaylistSort.manual) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: cs.secondaryContainer.withValues(
+                                  alpha: isDark ? 0.35 : 0.6,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.sort_rounded,
+                                    size: 14,
+                                    color: cs.onSecondaryContainer,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'Sorted by ${_playlistSortLabel(_playlistSort)}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: cs.onSecondaryContainer,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 18),
                           Row(
                             children: [
@@ -980,7 +1010,7 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                                   onPressed: songs.isEmpty
                                       ? null
                                       : () async => widget.playFromQueue(songs, 0),
-                                  icon: const Icon(Icons.play_arrow_rounded, size: 24),
+                                  icon: const Icon(Icons.play_arrow_rounded, size: 22),
                                   label: const Text(
                                     'Play',
                                     style: TextStyle(
@@ -997,38 +1027,38 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              FilledButton.tonal(
-                                onPressed: allSongs.isEmpty
-                                    ? null
-                                    : () async => _playShuffledQueue(allSongs),
-                                style: FilledButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
+                              Expanded(
+                                child: FilledButton.tonalIcon(
+                                  onPressed: allSongs.isEmpty
+                                      ? null
+                                      : () async => _playShuffledQueue(allSongs),
+                                  icon: const Icon(Icons.shuffle_rounded, size: 20),
+                                  label: const Text(
+                                    'Shuffle',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 15,
+                                    ),
                                   ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
+                                  style: FilledButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
                                   ),
                                 ),
-                                child: const Icon(Icons.shuffle_rounded, size: 20),
                               ),
                               const SizedBox(width: 10),
-                              OutlinedButton.icon(
+                              IconButton.filledTonal(
+                                tooltip: 'Add songs',
                                 onPressed: _addSongs,
-                                icon: const Icon(Icons.add_rounded, size: 20),
-                                label: const Text('Add'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  side: BorderSide(
-                                    color: cs.outlineVariant.withValues(alpha: 0.5),
-                                  ),
-                                ),
+                                icon: const Icon(Icons.add_rounded),
+                              ),
+                              const SizedBox(width: 6),
+                              IconButton.filledTonal(
+                                tooltip: 'More options',
+                                onPressed: () => _showPlaylistOptionsMenu(context, allSongs, totalMs),
+                                icon: const Icon(Icons.more_horiz_rounded),
                               ),
                             ],
                           ),
@@ -1037,41 +1067,19 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                     ),
                   ),
                 if (songs.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _isSearching
-                                ? Icons.search_off_rounded
-                                : Icons.music_note_rounded,
-                            size: 48,
-                            color: cs.onSurfaceVariant.withValues(alpha: 0.5),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            _isSearching
-                                ? 'No songs match "$_searchQuery"'
-                                : 'No songs in this playlist yet',
-                            style: TextStyle(
-                              color: cs.onSurfaceVariant,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (!_isSearching) ...[
-                            const SizedBox(height: 16),
-                            FilledButton.tonalIcon(
-                              onPressed: _addSongs,
-                              icon: const Icon(Icons.add_rounded),
-                              label: const Text('Add songs'),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
+                  AppEmptyState.sliver(
+                    icon: _isSearching
+                        ? Icons.search_off_rounded
+                        : Icons.music_note_rounded,
+                    title: _isSearching
+                        ? 'No matches found'
+                        : 'Playlist is empty',
+                    message: _isSearching
+                        ? 'No songs match "$_searchQuery"'
+                        : 'Add tracks from your library to this playlist.',
+                    actionLabel: _isSearching ? null : 'Add songs',
+                    actionIcon: Icons.add_rounded,
+                    onAction: _isSearching ? null : _addSongs,
                   )
                 else
                   SliverReorderableList(
@@ -1149,14 +1157,20 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                         );
                       }
 
+                      final isCurrent = currentSongId == song.id;
+                      final isCurrentlyPlaying = isCurrent && isAudioPlaying;
+
                       final tile = UniversalSongTile(
                         song: song,
                         subtitle: artistText,
                         isSelected: isSelected,
                         isSelectionMode: _selectionMode,
+                        isCurrent: isCurrent,
+                        isPlaying: isCurrentlyPlaying,
                         artworkSize: 48,
                         artworkBorderRadius: BorderRadius.circular(10),
                         borderRadius: BorderRadius.circular(14),
+                        showMetaDuration: false,
                         backgroundColor: isSelected
                             ? cs.secondaryContainer.withValues(
                                 alpha: isDark ? 0.35 : 0.6,
@@ -1165,7 +1179,7 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                         borderColor: Colors.transparent,
                         margin: const EdgeInsets.symmetric(
                           horizontal: 14,
-                          vertical: 2,
+                          vertical: 3.5,
                         ),
                         trailing: trailing,
                         onTap: () {
@@ -1212,15 +1226,21 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                       );
                     },
                     itemCount: songs.length,
+                    onReorderStart: (_) => HapticFeedback.mediumImpact(),
                     onReorder: canReorder ? _reorderVisible : (a, b) {},
                   ),
-                buildBottomBarsGutter(context),
-              ],
-            ),
-          ],
-        );
+                  buildBottomBarsGutter(context),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    ],
+  );
       },
-    );
+    ),
+  );
 
     if (widget.embeddedInHome) return content;
 
@@ -1252,139 +1272,83 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
     List<SongModel> songs,
     PlaybackController playbackController,
   ) {
-    final cs = Theme.of(context).colorScheme;
     final songTitle =
         song.title.trim().isEmpty ? 'Unknown Title' : song.title.trim();
     final artist = (song.artist?.trim().isEmpty ?? true)
         ? 'Unknown Artist'
         : song.artist!.trim();
 
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                  child: Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: FastArtworkWidget(
-                          id: song.id,
-                          type: ArtworkType.AUDIO,
-                          width: 48,
-                          height: 48,
-                          nullArtworkWidget: Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: cs.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.music_note_rounded,
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              songTitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(sheetContext)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              artist,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(sheetContext)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                  ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 16),
-                ListTile(
-                  leading: const Icon(Icons.playlist_play_rounded),
-                  title: const Text('Play next'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    playbackController.insertInQueue(song);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Playing next'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.queue_music_rounded),
-                  title: const Text('Add to queue'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    playbackController.addToQueueEnd(song);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Added to queue'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.checklist_rounded),
-                  title: const Text('Select track'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _enterSelectionMode(song.id);
-                  },
-                ),
-                ListTile(
-                  leading: Icon(Icons.delete_outline_rounded, color: cs.error),
-                  title: Text(
-                    'Remove from playlist',
-                    style: TextStyle(color: cs.error),
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _removeSongsByIds([song.id]);
-                  },
-                ),
-              ],
-            ),
+    final cs = Theme.of(context).colorScheme;
+    final headerThumbnail = ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: FastArtworkWidget(
+        id: song.id,
+        type: ArtworkType.AUDIO,
+        width: 48,
+        height: 48,
+        nullArtworkWidget: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
           ),
-        );
-      },
+          child: Icon(
+            Icons.music_note_rounded,
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+
+    showAppActionSheet<void>(
+      context: context,
+      headerThumbnail: headerThumbnail,
+      headerTitle: songTitle,
+      headerSubtitle: artist,
+      items: [
+        AppActionItem(
+          icon: Icons.playlist_play_rounded,
+          title: 'Play next',
+          onTap: () {
+            playbackController.insertInQueue(song);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Playing next'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          },
+        ),
+        AppActionItem(
+          icon: Icons.queue_music_rounded,
+          title: 'Add to queue',
+          onTap: () {
+            playbackController.addToQueueEnd(song);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Added to queue'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          },
+        ),
+        AppActionItem(
+          icon: Icons.checklist_rounded,
+          title: 'Select track',
+          onTap: () {
+            _enterSelectionMode(song.id);
+          },
+        ),
+        AppActionItem(
+          icon: Icons.delete_outline_rounded,
+          title: 'Remove from playlist',
+          isDestructive: true,
+          onTap: () {
+            _removeSongsByIds([song.id]);
+          },
+        ),
+      ],
     );
   }
 }

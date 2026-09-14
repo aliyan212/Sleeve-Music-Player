@@ -26,6 +26,7 @@ mixin PlaylistManagementMixin on ChangeNotifier {
   int get selectedTabIndex;
   void selectTab(int index);
   bool get nowPlayingRouteActive;
+  Widget? get inlineDetailContent;
   Future<void> openNowPlaying(SongModel song);
 
   static const String _userPlaylistsKey = 'user_playlists_v1';
@@ -90,17 +91,20 @@ mixin PlaylistManagementMixin on ChangeNotifier {
     }
   }
 
-  Future<UserPlaylist?> createNewPlaylist(String name) async {
+  Future<UserPlaylist?> createNewPlaylist(
+    String name, {
+    List<int> initialSongIds = const [],
+  }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final playlist = UserPlaylist(
       id: _newPlaylistId(),
       name: name,
-      songIds: const <int>[],
+      songIds: initialSongIds,
       createdAtMs: now,
       updatedAtMs: now,
     );
     userPlaylists = <UserPlaylist>[playlist, ...userPlaylists];
-    cachedUserPlaylistTrackCounts[playlist.id] = 0;
+    cachedUserPlaylistTrackCounts[playlist.id] = initialSongIds.length;
     recomputeAllData();
     notifyListeners();
     await saveUserPlaylists();
@@ -319,42 +323,64 @@ mixin PlaylistManagementMixin on ChangeNotifier {
 
   void openUserPlaylistPage(UserPlaylist playlist) {
     final playlistId = playlist.id;
-    showInlineDetail(
-      UserPlaylistPage(
-        player: playbackController.player,
-        playlistId: playlistId,
-        playlistName: playlist.name,
-        initialSongIds: playlist.songIds,
-        librarySongs: songs,
-        onQueueChanged: (_) {},
-        selectedTabIndex: selectedTabIndex,
-        onNavigateTab: selectTab,
-        embeddedInHome: true,
-        onClose: closeInlineDetail,
-        onOpenNowPlaying: (s) {
-          if (nowPlayingRouteActive) {
-            Navigator.of(context).pop();
+    final isPushed = nowPlayingRouteActive || inlineDetailContent != null;
+
+    final page = UserPlaylistPage(
+      player: playbackController.player,
+      playlistId: playlistId,
+      playlistName: playlist.name,
+      initialSongIds: playlist.songIds,
+      librarySongs: songs,
+      onQueueChanged: (_) {},
+      selectedTabIndex: selectedTabIndex,
+      onNavigateTab: selectTab,
+      embeddedInHome: !isPushed,
+      onClose: () {
+        if (isPushed) {
+          final nav = navigatorKey.currentState;
+          if (nav != null && nav.canPop()) {
+            nav.pop();
+          }
+        } else {
+          closeInlineDetail();
+        }
+      },
+      onOpenNowPlaying: (s) {
+        if (nowPlayingRouteActive) {
+          final nav = navigatorKey.currentState;
+          if (nav != null && nav.canPop()) {
+            nav.pop();
             return;
           }
-          openNowPlaying(s);
-        },
-        playFromQueue: (songs, initialIndex) async {
-          await playbackController.playFromQueue(songs, initialIndex: initialIndex);
-        },
-        onUpdateSongIds: (id, newSongIds) async {
-          final idx = userPlaylists.indexWhere((p) => p.id == id);
-          if (idx == -1) return;
-          final now = DateTime.now().millisecondsSinceEpoch;
-          final existing = userPlaylists[idx];
-          userPlaylists = List<UserPlaylist>.from(
-            userPlaylists,
-          )..[idx] = existing.copyWith(songIds: newSongIds, updatedAtMs: now);
-          recomputeAllData();
-          notifyListeners();
-          await saveUserPlaylists();
-        },
-      ),
+        }
+        openNowPlaying(s);
+      },
+      playFromQueue: (songs, initialIndex) async {
+        await playbackController.playFromQueue(songs, initialIndex: initialIndex);
+      },
+      onUpdateSongIds: (id, newSongIds) async {
+        final idx = userPlaylists.indexWhere((p) => p.id == id);
+        if (idx == -1) return;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final existing = userPlaylists[idx];
+        userPlaylists = List<UserPlaylist>.from(
+          userPlaylists,
+        )..[idx] = existing.copyWith(songIds: newSongIds, updatedAtMs: now);
+        recomputeAllData();
+        notifyListeners();
+        await saveUserPlaylists();
+      },
     );
+
+    if (isPushed) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute<void>(
+          builder: (_) => page,
+        ),
+      );
+    } else {
+      showInlineDetail(page);
+    }
   }
 
   void reorderUserPlaylists(int oldIndex, int newIndex) {

@@ -26,6 +26,7 @@ class MiniPlayer extends StatefulWidget {
   final int? currentIndex;
   final void Function(SongModel) onTap;
   final void Function(List<SongModel>) onQueueChanged;
+  final bool enableHero;
 
   const MiniPlayer({
     super.key,
@@ -34,6 +35,7 @@ class MiniPlayer extends StatefulWidget {
     this.currentIndex,
     required this.onTap,
     required this.onQueueChanged,
+    this.enableHero = true,
   });
 
   static int? _songIdFromTag(dynamic tag) {
@@ -91,6 +93,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
           onTap: () => widget.onTap(song),
           onDismiss: () => widget.controller.stop(),
           onQueueChanged: widget.onQueueChanged,
+          enableHero: widget.enableHero,
         );
       },
     );
@@ -105,6 +108,7 @@ class MiniPlayerTile extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback onDismiss;
   final void Function(List<SongModel>) onQueueChanged;
+  final bool enableHero;
 
   const MiniPlayerTile({
     super.key,
@@ -115,6 +119,7 @@ class MiniPlayerTile extends StatefulWidget {
     required this.onTap,
     required this.onDismiss,
     required this.onQueueChanged,
+    this.enableHero = true,
   });
 
   @override
@@ -364,9 +369,11 @@ class _MiniPlayerTileState extends State<MiniPlayerTile> {
       onVerticalDragEnd: (details) {
         if (details.velocity.pixelsPerSecond.dy < -300) {
           // Swipe up - open now playing
+          HapticFeedback.lightImpact();
           widget.onTap();
         } else if (details.velocity.pixelsPerSecond.dy > 300) {
           // Swipe down - dismiss/stop
+          HapticFeedback.lightImpact();
           widget.onDismiss();
         }
       },
@@ -476,13 +483,13 @@ class _MiniPlayerTileState extends State<MiniPlayerTile> {
                           onVerticalDragEnd: (details) {
                             if (details.primaryVelocity != null &&
                                 details.primaryVelocity! < -180) {
-                              HapticFeedback.mediumImpact();
+                              HapticFeedback.lightImpact();
                               widget.onTap();
                             }
                           },
                           onScaleUpdate: (details) {
                             if (details.scale > 1.08) {
-                              HapticFeedback.mediumImpact();
+                              HapticFeedback.lightImpact();
                               widget.onTap();
                             }
                           },
@@ -490,7 +497,7 @@ class _MiniPlayerTileState extends State<MiniPlayerTile> {
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: () {
-                                HapticFeedback.selectionClick();
+                                HapticFeedback.lightImpact();
                                 widget.onTap();
                               },
                               borderRadius: BorderRadius.circular(24),
@@ -498,78 +505,94 @@ class _MiniPlayerTileState extends State<MiniPlayerTile> {
                                 padding: const EdgeInsets.only(left: 10),
                                 child: Row(
                                   children: [
-                                    Hero(
-                                      tag: 'now_playing_artwork_${widget.song.id}',
-                                      createRectTween: (begin, end) =>
-                                          MaterialRectArcTween(
-                                            begin: begin,
-                                            end: end,
+                                    Builder(
+                                      builder: (context) {
+                                        final artworkContainer = Container(
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(14),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(alpha: 0.3),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
                                           ),
-                                      flightShuttleBuilder: (
-                                        flightContext,
-                                        animation,
-                                        flightDirection,
-                                        fromHeroContext,
-                                        toHeroContext,
-                                      ) {
-                                        final curved = CurvedAnimation(
-                                          parent: animation,
-                                          curve: Curves.fastOutSlowIn,
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(14),
+                                            child: _artworkBytes != null
+                                                ? Image.memory(
+                                                    _artworkBytes!,
+                                                    width: 52,
+                                                    height: 52,
+                                                    fit: BoxFit.cover,
+                                                    gaplessPlayback: true,
+                                                    filterQuality: FilterQuality.low,
+                                                  )
+                                                : Container(
+                                                    width: 52,
+                                                    height: 52,
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.black12,
+                                                      borderRadius: BorderRadius.circular(14),
+                                                    ),
+                                                    child: Icon(
+                                                      Icons.music_note,
+                                                      color: textColor,
+                                                    ),
+                                                  ),
+                                          ),
                                         );
-                                        return AnimatedBuilder(
-                                          animation: curved,
-                                          builder: (context, _) {
-                                            final radius = BorderRadius.lerp(
-                                              BorderRadius.circular(14),
-                                              BorderRadius.circular(28),
-                                              curved.value,
+
+                                        if (!widget.enableHero) {
+                                          return artworkContainer;
+                                        }
+
+                                        return Hero(
+                                          tag: 'now_playing_artwork_${widget.song.id}',
+                                          createRectTween: (begin, end) =>
+                                              MaterialRectArcTween(
+                                                begin: begin,
+                                                end: end,
+                                              ),
+                                          flightShuttleBuilder: (
+                                            flightContext,
+                                            animation,
+                                            flightDirection,
+                                            fromHeroContext,
+                                            toHeroContext,
+                                          ) {
+                                            final curved = CurvedAnimation(
+                                              parent: animation,
+                                              curve: Curves.easeOutCubic,
                                             );
-                                            return ClipRRect(
-                                              borderRadius:
-                                                  radius ??
-                                                  BorderRadius.circular(20),
-                                              child: toHeroContext.widget,
+                                            final toHero = toHeroContext.widget as Hero;
+                                            return AnimatedBuilder(
+                                              animation: curved,
+                                              builder: (context, _) {
+                                                final t = flightDirection == HeroFlightDirection.push
+                                                    ? curved.value
+                                                    : (1.0 - curved.value);
+                                                final radius = BorderRadius.lerp(
+                                                  BorderRadius.circular(14),
+                                                  BorderRadius.circular(28),
+                                                  t,
+                                                );
+                                                return Material(
+                                                  type: MaterialType.transparency,
+                                                  child: ClipRRect(
+                                                    borderRadius: radius ??
+                                                        BorderRadius.circular(20),
+                                                    child: toHero.child,
+                                                  ),
+                                                );
+                                              },
                                             );
                                           },
+                                          child: artworkContainer,
                                         );
                                       },
-                                      child: Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(14),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.3),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(14),
-                                        child: _artworkBytes != null
-                                            ? Image.memory(
-                                                _artworkBytes!,
-                                                width: 52,
-                                                height: 52,
-                                                fit: BoxFit.cover,
-                                                gaplessPlayback: true,
-                                                filterQuality: FilterQuality.low,
-                                              )
-                                            : Container(
-                                                width: 52,
-                                                height: 52,
-                                                decoration: BoxDecoration(
-                                                  color: Colors.black12,
-                                                  borderRadius: BorderRadius.circular(14),
-                                                ),
-                                                child: Icon(
-                                                  Icons.music_note,
-                                                  color: textColor,
-                                                ),
-                                              ),
-                                      ),
                                     ),
-                                  ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Column(

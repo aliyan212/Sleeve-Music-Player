@@ -86,6 +86,7 @@ class _LyricsEditorDialogState extends State<LyricsEditorDialog> {
       }
 
       if (!mounted) return;
+      final cs = Theme.of(context).colorScheme;
       final messenger = ScaffoldMessenger.maybeOf(context);
       Navigator.pop(context, true);
 
@@ -93,18 +94,39 @@ class _LyricsEditorDialogState extends State<LyricsEditorDialog> {
       widget.onSaved();
 
       messenger?.showSnackBar(
-        const SnackBar(
-          content: Text('Lyrics saved successfully'),
-          backgroundColor: Colors.green,
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: cs.primary, size: 20),
+              const SizedBox(width: 12),
+              const Text('Lyrics saved successfully'),
+            ],
+          ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
+      final cs = Theme.of(context).colorScheme;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to save lyrics: $e'),
-          backgroundColor: Colors.red,
-          action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+          backgroundColor: cs.errorContainer,
+          content: Row(
+            children: [
+              Icon(Icons.error_outline_rounded, color: cs.onErrorContainer, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Failed to save lyrics: $e',
+                  style: TextStyle(color: cs.onErrorContainer),
+                ),
+              ),
+            ],
+          ),
+          action: SnackBarAction(
+            label: 'Settings',
+            textColor: cs.onErrorContainer,
+            onPressed: openAppSettings,
+          ),
         ),
       );
     } finally {
@@ -134,10 +156,27 @@ class _LyricsEditorDialogState extends State<LyricsEditorDialog> {
 
   void _shiftTimingsByMs(int offsetMs) {
     if (!_isSynced) {
+      final cs = Theme.of(context).colorScheme;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Timing shift works for synced (LRC) lyrics only'),
-          backgroundColor: Colors.orange,
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: cs.onTertiaryContainer,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Timing shift works for synced (LRC) lyrics only',
+                  style: TextStyle(color: cs.onTertiaryContainer),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: cs.tertiaryContainer,
+          behavior: SnackBarBehavior.floating,
         ),
       );
       return;
@@ -158,10 +197,27 @@ class _LyricsEditorDialogState extends State<LyricsEditorDialog> {
 
   Future<void> _showCustomShiftDialog() async {
     if (!_isSynced) {
+      final cs = Theme.of(context).colorScheme;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Timing shift works for synced (LRC) lyrics only'),
-          backgroundColor: Colors.orange,
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: cs.onTertiaryContainer,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Timing shift works for synced (LRC) lyrics only',
+                  style: TextStyle(color: cs.onTertiaryContainer),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: cs.tertiaryContainer,
+          behavior: SnackBarBehavior.floating,
         ),
       );
       return;

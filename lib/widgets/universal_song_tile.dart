@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import '../ui/shared/fast_artwork_widget.dart';
 import '../utils/format_utils.dart';
@@ -351,7 +352,7 @@ class UniversalSongTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: titleStyle,
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 3.5),
               Text(
                 resolvedSubtitle.isEmpty ? 'Unknown Artist' : resolvedSubtitle,
                 maxLines: 1,
@@ -359,7 +360,7 @@ class UniversalSongTile extends StatelessWidget {
                 style: subtitleStyle,
               ),
               if (hasMetaLine) ...[
-                const SizedBox(height: 2),
+                const SizedBox(height: 2.5),
                 Row(
                   children: [
                     if (resolvedMeta != null && resolvedMeta.isNotEmpty)
@@ -406,8 +407,8 @@ class UniversalSongTile extends StatelessWidget {
 
     final effectivePadding = padding ??
         (showShadows
-            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 14)
-            : const EdgeInsets.symmetric(horizontal: 10, vertical: 8));
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 15.5)
+            : const EdgeInsets.symmetric(horizontal: 10, vertical: 10.5));
 
     final effectiveMargin = margin ??
         (showShadows
@@ -434,7 +435,12 @@ class UniversalSongTile extends StatelessWidget {
           child: InkWell(
             borderRadius: resolvedRadius,
             onTap: onTap,
-            onLongPress: onLongPress,
+            onLongPress: onLongPress == null
+                ? null
+                : () {
+                    HapticFeedback.mediumImpact();
+                    onLongPress!();
+                  },
             child: Padding(
               padding: effectivePadding,
               child: content,

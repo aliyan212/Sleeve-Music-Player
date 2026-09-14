@@ -362,6 +362,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
 
     _positionSub = widget.player.positionStream.listen((position) {
       if (!mounted || !_isSynced || _lrcLines.isEmpty || !_showLyrics) return;
+      if (!appIsForeground.value) return;
 
       final activeIndex = _activeLyricIndexForPosition(position);
       if (activeIndex != _currentLyricIndex) {
@@ -373,6 +374,9 @@ class _NowPlayingPageState extends State<NowPlayingPage>
         }
       }
     });
+    if (!appIsForeground.value) {
+      _positionSub?.pause();
+    }
   }
 
   @override
@@ -631,18 +635,33 @@ class _NowPlayingPageState extends State<NowPlayingPage>
 
   void _handleForegroundChanged() {
     if (!mounted) return;
-    _syncMotionControllers();
-    if (appIsForeground.value && _showLyrics) {
-      _setLyricsVisible(true, force: true);
+    if (appIsForeground.value) {
+      // 1. RESUME: Instant Catch-Up
+      if (_showLyrics && _isSynced) {
+        _primeLyricsScroll();
+      }
+      if (_positionSub?.isPaused == true) {
+        _positionSub?.resume();
+      }
+      _syncMotionControllers();
+      if (_showLyrics) {
+        _setLyricsVisible(true, force: true);
+      }
+    } else {
+      // 2. PAUSE: Deep Sleep Mode
+      _positionSub?.pause();
+      WakelockPlus.disable();
+      if (_bgGradientController.isAnimating) _bgGradientController.stop();
+      if (_artworkPulseController.isAnimating) _artworkPulseController.stop();
     }
   }
 
-  void _openDetailAfterClosingNowPlaying(void Function(SongModel song) open) {
-    final song = _displayedSong;
-    Navigator.of(context).pop();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      open(song);
-    });
+  void _openArtistDetail() {
+    widget.onOpenArtist(_displayedSong);
+  }
+
+  void _openAlbumDetail() {
+    widget.onOpenAlbum(_displayedSong);
   }
 
   void _setLyricsVisible(bool show, {bool force = false}) {
@@ -936,8 +955,8 @@ class _NowPlayingPageState extends State<NowPlayingPage>
         isFullscreen: true,
       ),
       lyricsView: _buildLyricsView(),
-      onOpenArtist: () => _openDetailAfterClosingNowPlaying(widget.onOpenArtist),
-      onOpenAlbum: () => _openDetailAfterClosingNowPlaying(widget.onOpenAlbum),
+      onOpenArtist: _openArtistDetail,
+      onOpenAlbum: _openAlbumDetail,
     );
   }
 
@@ -1006,6 +1025,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
       onVerticalDragEnd: (details) {
         if (_fullscreenLandscape) return;
         if (_dragOffset > 150 || (details.primaryVelocity ?? 0) > 400) {
+          HapticFeedback.lightImpact();
           Navigator.pop(context);
         } else {
           setState(() => _dragOffset = 0.0);
@@ -1319,9 +1339,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                   GestureDetector(
                                     onTap: () {
                                       HapticFeedback.selectionClick();
-                                      _openDetailAfterClosingNowPlaying(
-                                        widget.onOpenArtist,
-                                      );
+                                      _openArtistDetail();
                                     },
                                     child: Text(
                                       _displayedSong.artist ?? "Unknown Artist",
@@ -1343,9 +1361,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                   GestureDetector(
                                     onTap: () {
                                       HapticFeedback.selectionClick();
-                                      _openDetailAfterClosingNowPlaying(
-                                        widget.onOpenAlbum,
-                                      );
+                                      _openAlbumDetail();
                                     },
                                     child: Text(
                                       _displayedSong.album ?? "Unknown Album",

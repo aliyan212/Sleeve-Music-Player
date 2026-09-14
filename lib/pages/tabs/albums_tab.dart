@@ -4,12 +4,29 @@ import '../../services/app_state_controller.dart';
 import '../../data/models/album_stat.dart';
 import '../../dialogs/batch_tag_editor_dialog.dart';
 import '../../ui/shared/fast_artwork_widget.dart';
+import '../../ui/shared/app_action_sheet.dart';
 import '../../ui/shared/bottom_bars_gutter.dart';
+import '../../ui/shared/alphabetical_bubble_scroller.dart';
+import '../../ui/shared/app_empty_state.dart';
 import '../../utils/song_sort_utils.dart';
+import '../../widgets/search/app_search_view.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
-class AlbumsTab extends StatelessWidget {
+class AlbumsTab extends StatefulWidget {
   const AlbumsTab({super.key});
+
+  @override
+  State<AlbumsTab> createState() => _AlbumsTabState();
+}
+
+class _AlbumsTabState extends State<AlbumsTab> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,21 +62,50 @@ class AlbumsTab extends StatelessWidget {
 
     final cs = Theme.of(context).colorScheme;
 
-    return Scrollbar(
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
+    final isNumeric = albumsSort == AlbumsSort.yearAsc ||
+        albumsSort == AlbumsSort.yearDesc ||
+        albumsSort == AlbumsSort.mostTracks ||
+        albumsSort == AlbumsSort.leastTracks;
+
+    return AlphabeticalBubbleScroller(
+      scrollController: _scrollController,
+      itemCount: albums.length,
+      headerHeight: 144.0,
+      itemHeight: 86.0,
+      sortKey: albumsSort,
+      isNumericSort: isNumeric,
+      sectionKeyOf: (index) {
+        final a = albums[index];
+        switch (albumsSort) {
+          case AlbumsSort.titleAsc:
+          case AlbumsSort.titleDesc:
+            return a.title;
+          case AlbumsSort.artistAsc:
+          case AlbumsSort.artistDesc:
+          case AlbumsSort.albumArtistYear:
+            return a.artist;
+          case AlbumsSort.yearAsc:
+          case AlbumsSort.yearDesc:
+            return a.year > 0 ? '${a.year}' : '#';
+          case AlbumsSort.mostTracks:
+          case AlbumsSort.leastTracks:
+            return '${a.trackCount}';
+        }
+      },
+      child: CustomScrollView(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
             SliverAppBar.large(
               title: const Text('Albums'),
-              expandedHeight: 166,
-              collapsedHeight: 86,
-              toolbarHeight: 86,
+              expandedHeight: 164,
               backgroundColor: cs.surface.withValues(alpha: 0.90),
               surfaceTintColor: Colors.transparent,
               foregroundColor: cs.onSurface,
-              titleTextStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
+              titleTextStyle: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 color: cs.onSurface,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
               ),
               actions: [
                 IconButton(
@@ -67,7 +113,7 @@ class AlbumsTab extends StatelessWidget {
                   tooltip: 'Search',
                   onPressed: () {
                     HapticFeedback.selectionClick();
-                    appState.openSearch();
+                    appState.openSearch(initialFilter: SearchFilter.albums);
                   },
                 ),
                 PopupMenuButton<AlbumsSort>(
@@ -136,17 +182,14 @@ class AlbumsTab extends StatelessWidget {
               ),
             ),
             if (albums.isEmpty)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: 80),
-                    child: Text('No albums found'),
-                  ),
-                ),
+              AppEmptyState.sliver(
+                icon: Icons.album_rounded,
+                title: 'No albums found',
+                message: 'Your library does not contain any albums yet.',
               )
-            else ...[
-              SliverList(
+            else
+              SliverFixedExtentList(
+                itemExtent: 86.0,
                 delegate: SliverChildBuilderDelegate((context, i) {
                   final album = albums[i];
                   final albumId = album.albumId;
@@ -200,10 +243,14 @@ class AlbumsTab extends StatelessWidget {
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
                                   child: FastArtworkWidget(
-                                    id: albumId,
-                                    type: ArtworkType.ALBUM,
+                                    id: song.id,
+                                    type: ArtworkType.AUDIO,
+                                    fallbackId: albumId,
+                                    fallbackType: ArtworkType.ALBUM,
                                     width: 54,
                                     height: 54,
+                                    size: 500,
+                                    quality: 100,
                                     nullArtworkWidget: Container(
                                       width: 54,
                                       height: 54,
@@ -261,13 +308,12 @@ class AlbumsTab extends StatelessWidget {
                   );
                 }, childCount: albums.length),
               ),
-              buildBottomBarsGutter(context),
-            ],
+            buildBottomBarsGutter(context),
           ],
         ),
       );
-      },
-    );
+    },
+  );
   }
 
   void _showAlbumOptionsModal(
@@ -280,130 +326,112 @@ class AlbumsTab extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final albumId = song.albumId ?? song.id;
 
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                  child: Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: FastArtworkWidget(
-                          id: albumId,
-                          type: ArtworkType.ALBUM,
-                          width: 48,
-                          height: 48,
-                          nullArtworkWidget: Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: cs.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.album_rounded,
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(sheetContext)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(sheetContext)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                  ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 16),
-                ListTile(
-                  leading: const Icon(Icons.play_arrow_rounded),
-                  title: const Text('Play Album'),
-                  onTap: () async {
-                    Navigator.pop(sheetContext);
-                    final targetKey = albumIdentityKey(song);
-                    final albumSongs = appState.songs
-                        .where((s) => albumIdentityKey(s) == targetKey)
-                        .toList();
-                    albumSongs.sort(compareDiscAndTrack);
-                    if (albumSongs.isNotEmpty) {
-                      await appState.playFromQueue(albumSongs, initialIndex: 0);
-                    }
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.tune_rounded),
-                  title: const Text('Edit Album Tags'),
-                  onTap: () async {
-                    Navigator.pop(sheetContext);
-                    final targetKey = albumIdentityKey(song);
-                    final albumSongs = appState.songs
-                        .where((s) => albumIdentityKey(s) == targetKey)
-                        .toList();
-                    albumSongs.sort(compareDiscAndTrack);
-                    if (albumSongs.isEmpty) return;
-                    await showDialog<void>(
-                      context: context,
-                      builder: (ctx) => BatchTagEditorDialog(
-                        songs: albumSongs,
-                        onSaved: () {},
-                        onSongsUpdated: (updatedSongs) {
-                          appState.updateSongsMetadataInPlace(updatedSongs);
-                        },
-                        runWithPlaybackSuspended: (action) =>
-                            appState.runWithPlaybackSuspendedForBatchTagWrite(
-                              action,
-                              targetFilePaths: albumSongs
-                                  .map((s) => s.data)
-                                  .toSet(),
-                              itemCount: albumSongs.length,
-                            ),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
+    List<SongModel> getAlbumSongs() {
+      final targetKey = albumIdentityKey(song);
+      final list = appState.songs
+          .where((s) => albumIdentityKey(s) == targetKey)
+          .toList();
+      list.sort(compareDiscAndTrack);
+      return list;
+    }
+
+    final headerThumbnail = ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: FastArtworkWidget(
+        id: song.id,
+        type: ArtworkType.AUDIO,
+        fallbackId: albumId,
+        fallbackType: ArtworkType.ALBUM,
+        width: 48,
+        height: 48,
+        size: 400,
+        quality: 100,
+        nullArtworkWidget: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
           ),
-        );
-      },
+          child: Icon(
+            Icons.album_rounded,
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+
+    showAppActionSheet<void>(
+      context: context,
+      headerThumbnail: headerThumbnail,
+      headerTitle: title,
+      headerSubtitle: subtitle,
+      items: [
+        AppActionItem(
+          icon: Icons.album_rounded,
+          title: 'Open Album',
+          subtitle: 'View tracks in this album',
+          onTap: () => appState.openAlbumPageFromSong(song),
+        ),
+        AppActionItem(
+          icon: Icons.play_arrow_rounded,
+          title: 'Play Album',
+          subtitle: 'Start playback from track 1',
+          onTap: () async {
+            final albumSongs = getAlbumSongs();
+            if (albumSongs.isNotEmpty) {
+              await appState.playFromQueue(albumSongs, initialIndex: 0);
+            }
+          },
+        ),
+        AppActionItem(
+          icon: Icons.playlist_add_rounded,
+          title: 'Play next',
+          subtitle: 'Insert album tracks after current song',
+          onTap: () async {
+            final albumSongs = getAlbumSongs();
+            if (albumSongs.isNotEmpty) {
+              await appState.insertAllInQueue(albumSongs);
+            }
+          },
+        ),
+        AppActionItem(
+          icon: Icons.queue_music_rounded,
+          title: 'Add to queue',
+          subtitle: 'Append album tracks to queue end',
+          onTap: () async {
+            final albumSongs = getAlbumSongs();
+            if (albumSongs.isNotEmpty) {
+              await appState.addAllToQueueEnd(albumSongs);
+            }
+          },
+        ),
+        AppActionItem(
+          icon: Icons.tune_rounded,
+          title: 'Edit Album Tags',
+          subtitle: 'Batch edit tags across all album tracks',
+          onTap: () async {
+            final albumSongs = getAlbumSongs();
+            if (albumSongs.isEmpty) return;
+            await showDialog<void>(
+              context: context,
+              builder: (ctx) => BatchTagEditorDialog(
+                songs: albumSongs,
+                onSaved: () {},
+                onSongsUpdated: (updatedSongs) {
+                  appState.updateSongsMetadataInPlace(updatedSongs);
+                },
+                runWithPlaybackSuspended: (action) =>
+                    appState.runWithPlaybackSuspendedForBatchTagWrite(
+                      action,
+                      targetFilePaths: albumSongs.map((s) => s.data).toSet(),
+                      itemCount: albumSongs.length,
+                    ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }

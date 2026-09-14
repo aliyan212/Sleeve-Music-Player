@@ -122,6 +122,7 @@ Future<List<int>> showAddSongsSheet({
                               : Checkbox(
                                   value: isChecked,
                                   onChanged: (v) {
+                                    HapticFeedback.selectionClick();
                                     setSheetState(() {
                                       if (v == true) {
                                         selected.add(s.id);

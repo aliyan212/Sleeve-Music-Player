@@ -7,6 +7,7 @@ import '../../data/models/user_playlist.dart';
 import '../../services/playback_controller.dart';
 import '../../dialogs/playlist_dialogs.dart';
 import '../../ui/shared/bottom_bars_gutter.dart';
+import '../../ui/shared/app_empty_state.dart';
 
 class PlaylistsTab extends StatelessWidget {
   const PlaylistsTab({super.key});
@@ -185,15 +186,14 @@ class PlaylistsTab extends StatelessWidget {
       slivers: [
           SliverAppBar.large(
             title: const Text('Playlists'),
-            expandedHeight: 166,
-            collapsedHeight: 86,
-            toolbarHeight: 86,
+            expandedHeight: 164,
             backgroundColor: cs.surface.withValues(alpha: 0.90),
             surfaceTintColor: Colors.transparent,
             foregroundColor: cs.onSurface,
-            titleTextStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
+            titleTextStyle: Theme.of(context).textTheme.headlineMedium?.copyWith(
               color: cs.onSurface,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
             ),
             actions: [
               IconButton(
@@ -296,14 +296,24 @@ class PlaylistsTab extends StatelessWidget {
           ),
           if (userPlaylists.isEmpty)
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Text(
-                  'Long-press a song → Select to create a playlist.',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              child: AppEmptyState(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 24,
                 ),
+                icon: Icons.queue_music_rounded,
+                title: 'No custom playlists',
+                message:
+                    'Create your own playlists or import .m3u files to organize your music.',
+                actionLabel: 'New Playlist',
+                actionIcon: Icons.add_rounded,
+                onAction: () async {
+                  final pl = await promptCreatePlaylist(
+                    context,
+                    onPlaylistCreated: appState.createNewPlaylist,
+                  );
+                  if (pl != null) appState.openUserPlaylistPage(pl);
+                },
               ),
             )
           else
@@ -360,6 +370,7 @@ class PlaylistsTab extends StatelessWidget {
                         child: child,
                       );
                     },
+                onReorderStart: (_) => HapticFeedback.mediumImpact(),
                 onReorder: appState.reorderUserPlaylists,
                 children: [
                   for (var i = 0; i < userPlaylists.length; i++)
@@ -371,7 +382,7 @@ class PlaylistsTab extends StatelessWidget {
                             '${cachedUserPlaylistTrackCounts[userPlaylists[i].id] ?? 0} tracks',
                         icon: Icons.playlist_play_rounded,
                         onLongPress: () {
-                          HapticFeedback.selectionClick();
+                          HapticFeedback.mediumImpact();
                           showUserPlaylistActionsSheet(
                             context,
                             userPlaylists[i],

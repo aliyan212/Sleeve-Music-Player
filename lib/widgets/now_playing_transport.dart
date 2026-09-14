@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 
 class NowPlayingTransport extends StatelessWidget {
@@ -104,6 +105,7 @@ class NowPlayingTransport extends StatelessWidget {
                 tooltip: enabled ? 'Shuffle on' : 'Shuffle off',
                 isActive: enabled,
                 onPressed: () async {
+                  HapticFeedback.selectionClick();
                   final next = !player.shuffleModeEnabled;
                   await player.setShuffleModeEnabled(next);
                   if (next) {
@@ -118,7 +120,10 @@ class NowPlayingTransport extends StatelessWidget {
           sideButton(
             tooltip: 'Previous',
             onPressed: player.hasPrevious
-                ? () => player.seekToPrevious()
+                ? () {
+                    HapticFeedback.lightImpact();
+                    player.seekToPrevious();
+                  }
                 : null,
             icon: Icons.skip_previous_rounded,
           ),
@@ -138,6 +143,7 @@ class NowPlayingTransport extends StatelessWidget {
                   child: InkWell(
                     customBorder: const CircleBorder(),
                     onTap: () async {
+                      HapticFeedback.lightImpact();
                       if (playing) {
                         await player.pause();
                       } else {
@@ -167,7 +173,12 @@ class NowPlayingTransport extends StatelessWidget {
           const SizedBox(width: 16),
           sideButton(
             tooltip: 'Next',
-            onPressed: player.hasNext ? () => player.seekToNext() : null,
+            onPressed: player.hasNext
+                ? () {
+                    HapticFeedback.lightImpact();
+                    player.seekToNext();
+                  }
+                : null,
             icon: Icons.skip_next_rounded,
           ),
           const SizedBox(width: 12),
@@ -189,6 +200,7 @@ class NowPlayingTransport extends StatelessWidget {
                 },
                 isActive: loopMode != LoopMode.off,
                 onPressed: () async {
+                  HapticFeedback.selectionClick();
                   final next = switch (player.loopMode) {
                     LoopMode.off => LoopMode.all,
                     LoopMode.all => LoopMode.one,

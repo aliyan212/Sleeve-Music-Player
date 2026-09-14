@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
@@ -11,6 +13,7 @@ import '../../pages/artist_page.dart';
 import '../../pages/now_playing_page.dart';
 import '../../platform_exit.dart';
 import '../../utils/song_sort_utils.dart';
+import '../../widgets/search/app_search_view.dart';
 import '../playback_controller.dart';
 
 /// Mixin managing app-wide navigation state, tabs, inline detail pages,
@@ -36,6 +39,9 @@ mixin NavigationStateMixin on ChangeNotifier {
   BuildContext get context => navigatorKey.currentContext!;
 
   void selectTab(int index) {
+    if (selectedTabIndex != index) {
+      HapticFeedback.selectionClick();
+    }
     if (isSelectionMode) exitSelectionMode();
     if (inlineDetailContent != null) {
       inlineDetailContent = null;
@@ -56,15 +62,14 @@ mixin NavigationStateMixin on ChangeNotifier {
     notifyListeners();
   }
 
-  void openSearch() {
-    if (selectedTabIndex != 0) {
-      selectTab(0);
+  void openSearch({SearchFilter initialFilter = SearchFilter.all}) {
+    if (inlineDetailContent != null) {
+      inlineDetailContent = null;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (searchController.isAttached && !searchController.isOpen) {
-        searchController.openView();
-      }
-    });
+    final ctx = navigatorKey.currentContext;
+    if (ctx != null) {
+      AppSearchView.show(ctx, initialFilter: initialFilter);
+    }
   }
 
   void enterSelectionMode({int? initialSongId}) {
@@ -94,6 +99,77 @@ mixin NavigationStateMixin on ChangeNotifier {
       isSelectionMode = true;
     }
     notifyListeners();
+  }
+
+  void selectAllSongs(Iterable<int> songIds) {
+    selectedSongIds.addAll(songIds);
+    isSelectionMode = selectedSongIds.isNotEmpty;
+    notifyListeners();
+  }
+
+  void deselectAllSongs() {
+    selectedSongIds.clear();
+    notifyListeners();
+  }
+
+  Future<bool> deleteSelectedSongs(BuildContext context) async {
+    final toDelete = songs
+        .where((s) => selectedSongIds.contains(s.id))
+        .toList(growable: false);
+    if (toDelete.isEmpty) return false;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete ${toDelete.length} track${toDelete.length == 1 ? '' : 's'}?'),
+        content: const Text(
+          'This will permanently delete the selected audio files from your device.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return false;
+
+    int deletedCount = 0;
+    for (final s in toDelete) {
+      try {
+        final f = File(s.data);
+        if (await f.exists()) {
+          await f.delete();
+          deletedCount++;
+        }
+      } catch (_) {}
+    }
+
+    final deletedIds = toDelete.map((s) => s.id).toSet();
+    songs.removeWhere((s) => deletedIds.contains(s.id));
+    selectedSongIds.removeWhere(deletedIds.contains);
+    if (selectedSongIds.isEmpty) isSelectionMode = false;
+    notifyListeners();
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Deleted $deletedCount track${deletedCount == 1 ? '' : 's'}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+    return true;
   }
 
   void openAboutPage() {
@@ -162,7 +238,7 @@ mixin NavigationStateMixin on ChangeNotifier {
             onSongUpdated: updateSongMetadataInPlace,
           ),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            final curve = CurveTween(curve: Curves.fastOutSlowIn);
+            final curve = CurveTween(curve: Curves.easeOutCubic);
             final fade = Tween<double>(begin: 0.0, end: 1.0).chain(curve);
 
             // When returning to the miniplayer (reverse transition / pop),
@@ -218,38 +294,60 @@ mixin NavigationStateMixin on ChangeNotifier {
         .toList();
     albumSongs.sort(compareDiscAndTrack);
 
-    showInlineDetail(
-      AlbumPage(
-        player: playbackController.player,
-        albumId: albumId,
-        albumTitle: albumTitle,
-        albumArtist: albumArtist,
-        songs: albumSongs,
-        librarySongs: songs,
-        onQueueChanged: (_) {},
-        selectedTabIndex: selectedTabIndex,
-        onNavigateTab: selectTab,
-        embeddedInHome: true,
-        onClose: closeInlineDetail,
-        onOpenNowPlaying: (s) {
-          if (nowPlayingRouteActive) {
-            Navigator.of(context).pop();
+    final isPushed = nowPlayingRouteActive || inlineDetailContent != null;
+
+    final albumPage = AlbumPage(
+      player: playbackController.player,
+      albumId: albumId,
+      albumTitle: albumTitle,
+      albumArtist: albumArtist,
+      songs: albumSongs,
+      librarySongs: songs,
+      onQueueChanged: (_) {},
+      selectedTabIndex: selectedTabIndex,
+      onNavigateTab: selectTab,
+      embeddedInHome: !isPushed,
+      onClose: () {
+        if (isPushed) {
+          final nav = navigatorKey.currentState;
+          if (nav != null && nav.canPop()) {
+            nav.pop();
+          }
+        } else {
+          closeInlineDetail();
+        }
+      },
+      onOpenNowPlaying: (s) {
+        if (nowPlayingRouteActive) {
+          final nav = navigatorKey.currentState;
+          if (nav != null && nav.canPop()) {
+            nav.pop();
             return;
           }
-          openNowPlaying(s);
-        },
-        onPlaySong: (s) async {
-          final albumIndex = albumSongs.indexWhere((x) => x.id == s.id);
-          if (albumIndex == -1) return;
-          await playbackController.playFromQueue(albumSongs, initialIndex: albumIndex);
-        },
-        onShuffle: () async {
-          if (albumSongs.isEmpty) return;
-          final shuffled = List<SongModel>.from(albumSongs)..shuffle();
-          await playbackController.playFromQueue(shuffled, initialIndex: 0);
-        },
-      ),
+        }
+        openNowPlaying(s);
+      },
+      onPlaySong: (s) async {
+        final albumIndex = albumSongs.indexWhere((x) => x.id == s.id);
+        if (albumIndex == -1) return;
+        await playbackController.playFromQueue(albumSongs, initialIndex: albumIndex);
+      },
+      onShuffle: () async {
+        if (albumSongs.isEmpty) return;
+        final shuffled = List<SongModel>.from(albumSongs)..shuffle();
+        await playbackController.playFromQueue(shuffled, initialIndex: 0);
+      },
     );
+
+    if (isPushed) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute<void>(
+          builder: (_) => albumPage,
+        ),
+      );
+    } else {
+      showInlineDetail(albumPage);
+    }
   }
 
   void openArtistPageFromSong(SongModel song) {
@@ -336,48 +434,70 @@ mixin NavigationStateMixin on ChangeNotifier {
       albumKeyForAlbum[repId] = entry.key;
     }
 
-    showInlineDetail(
-      ArtistPage(
-        player: playbackController.player,
-        artistName: normalizedArtist,
-        albums: albums,
-        artistSongs: artistSongs,
-        librarySongs: songs,
-        onQueueChanged: (_) {},
-        selectedTabIndex: selectedTabIndex,
-        onNavigateTab: selectTab,
-        embeddedInHome: true,
-        onClose: closeInlineDetail,
-        onOpenNowPlaying: (s) {
-          if (nowPlayingRouteActive) {
-            Navigator.of(context).pop();
+    final isPushed = nowPlayingRouteActive || inlineDetailContent != null;
+
+    final artistPage = ArtistPage(
+      player: playbackController.player,
+      artistName: normalizedArtist,
+      albums: albums,
+      artistSongs: artistSongs,
+      librarySongs: songs,
+      onQueueChanged: (_) {},
+      selectedTabIndex: selectedTabIndex,
+      onNavigateTab: selectTab,
+      embeddedInHome: !isPushed,
+      onClose: () {
+        if (isPushed) {
+          final nav = navigatorKey.currentState;
+          if (nav != null && nav.canPop()) {
+            nav.pop();
+          }
+        } else {
+          closeInlineDetail();
+        }
+      },
+      onOpenNowPlaying: (s) {
+        if (nowPlayingRouteActive) {
+          final nav = navigatorKey.currentState;
+          if (nav != null && nav.canPop()) {
+            nav.pop();
             return;
           }
-          openNowPlaying(s);
-        },
-        onOpenAlbum: (s) => openAlbumPageFromSong(s),
-        onPlayAll: albums.isEmpty
-            ? null
-            : () async {
-                final queue = <SongModel>[];
-                for (final a in albums) {
-                  final key = albumKeyForAlbum[a.albumId] ?? '';
-                  final list = songsByAlbumKey[key] ?? const <SongModel>[];
-                  final sorted = List<SongModel>.from(list);
-                  sorted.sort(compareDiscAndTrack);
-                  queue.addAll(sorted);
-                }
-                if (queue.isEmpty) return;
-                await playbackController.playFromQueue(queue, initialIndex: 0);
-              },
-        onShuffleAll: artistSongs.isEmpty
-            ? null
-            : () async {
-                final queue = List<SongModel>.from(artistSongs);
-                queue.shuffle();
-                await playbackController.playFromQueue(queue, initialIndex: 0);
-              },
-      ),
+        }
+        openNowPlaying(s);
+      },
+      onOpenAlbum: (s) => openAlbumPageFromSong(s),
+      onPlayAll: albums.isEmpty
+          ? null
+          : () async {
+              final queue = <SongModel>[];
+              for (final a in albums) {
+                final key = albumKeyForAlbum[a.albumId] ?? '';
+                final list = songsByAlbumKey[key] ?? const <SongModel>[];
+                final sorted = List<SongModel>.from(list);
+                sorted.sort(compareDiscAndTrack);
+                queue.addAll(sorted);
+              }
+              if (queue.isEmpty) return;
+              await playbackController.playFromQueue(queue, initialIndex: 0);
+            },
+      onShuffleAll: artistSongs.isEmpty
+          ? null
+          : () async {
+              final queue = List<SongModel>.from(artistSongs);
+              queue.shuffle();
+              await playbackController.playFromQueue(queue, initialIndex: 0);
+            },
     );
+
+    if (isPushed) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute<void>(
+          builder: (_) => artistPage,
+        ),
+      );
+    } else {
+      showInlineDetail(artistPage);
+    }
   }
 }

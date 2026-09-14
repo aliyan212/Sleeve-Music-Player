@@ -49,6 +49,7 @@ dependencies:
   media_kit_libs_linux: ^1.2.1
   media_kit_libs_windows_audio: ^1.0.9
   media_kit_libs_macos_audio: ^1.1.4
+  animations: ^2.0.11
 dev_dependencies:
   flutter_test:
     sdk: flutter

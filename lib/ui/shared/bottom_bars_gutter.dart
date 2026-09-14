@@ -35,6 +35,7 @@ Widget buildDetailBottomBars({
   required Function(SongModel) onOpenNowPlaying,
   required int selectedTabIndex,
   required ValueChanged<int> onNavigateTab,
+  bool enableHero = false,
 }) {
   final cs = Theme.of(context).colorScheme;
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -47,6 +48,7 @@ Widget buildDetailBottomBars({
         currentIndex: currentIndex,
         onQueueChanged: onQueueChanged,
         onTap: onOpenNowPlaying,
+        enableHero: enableHero,
       ),
       ClipRect(
         child: BackdropFilter(

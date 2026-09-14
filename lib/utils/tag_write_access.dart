@@ -455,7 +455,7 @@ Future<void> restorePlayerAfterTagWrite(
         initialIndex: targetIndex,
         initialPosition: pos,
       );
-      if (wasPlaying) await player.play();
+      if (wasPlaying) unawaited(player.play());
     }
   } catch (e) {
     debugPrint('restorePlayerAfterTagWrite error: $e');

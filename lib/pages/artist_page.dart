@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import 'album_page.dart';
+import 'now_playing_page.dart';
 import '../data/models/album_stat.dart';
 import '../dialogs/batch_tag_editor_dialog.dart';
 import '../services/app_state_controller.dart';
 import '../services/playback_controller.dart';
 import '../ui/shared/bottom_bars_gutter.dart';
 import '../ui/shared/fast_artwork_widget.dart';
+import '../ui/shared/app_action_sheet.dart';
 import '../utils/format_utils.dart';
 import '../utils/palette_compute.dart';
 import '../utils/song_sort_utils.dart';
@@ -90,6 +93,19 @@ class _ArtistPageState extends State<ArtistPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final repAlbumId =
         widget.albums.isNotEmpty ? widget.albums.first.albumId : 0;
+    if (repAlbumId > 0 && !_paletteCache.containsKey(repAlbumId)) {
+      if (AlbumPage.albumPaletteCache.containsKey(repAlbumId)) {
+        _paletteCache[repAlbumId] = AlbumPage.albumPaletteCache[repAlbumId]!;
+      } else {
+        for (final s in _allArtistSongs()) {
+          final seeded = NowPlayingPage.paletteCache[s.id];
+          if (seeded != null) {
+            _paletteCache[repAlbumId] = seeded;
+            break;
+          }
+        }
+      }
+    }
     if (_paletteFuture == null || _paletteAlbumId != repAlbumId) {
       _paletteAlbumId = repAlbumId;
       _paletteFuture = _loadPalette(repAlbumId, isDark);
@@ -193,142 +209,111 @@ class _ArtistPageState extends State<ArtistPage> {
     final cs = Theme.of(context).colorScheme;
     final albumSongs = _songsForAlbum(album);
 
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                  child: Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: FastArtworkWidget(
-                          id: album.albumId,
-                          type: ArtworkType.ALBUM,
-                          width: 48,
-                          height: 48,
-                          nullArtworkWidget: Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: cs.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.album_rounded,
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              album.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(sheetContext)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${widget.artistName} • ${album.year > 0 ? '${album.year} • ' : ''}${album.trackCount} tracks',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(sheetContext)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                  ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 16),
-                ListTile(
-                  leading: const Icon(Icons.play_arrow_rounded),
-                  title: const Text('Play Album'),
-                  onTap: () async {
-                    Navigator.pop(sheetContext);
-                    if (albumSongs.isNotEmpty) {
-                      await playbackController
-                          .playFromQueue(albumSongs, initialIndex: 0);
-                    }
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.shuffle_rounded),
-                  title: const Text('Shuffle Album'),
-                  onTap: () async {
-                    Navigator.pop(sheetContext);
-                    if (albumSongs.isNotEmpty) {
-                      final shuffled = List<SongModel>.from(albumSongs)..shuffle();
-                      await playbackController
-                          .playFromQueue(shuffled, initialIndex: 0);
-                    }
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.tune_rounded),
-                  title: const Text('Edit Album Tags'),
-                  onTap: () async {
-                    Navigator.pop(sheetContext);
-                    if (albumSongs.isEmpty) return;
-                    final appState = AppStateController.instance;
-                    await showDialog<void>(
-                      context: context,
-                      builder: (ctx) => BatchTagEditorDialog(
-                        songs: albumSongs,
-                        onSaved: () {},
-                        onSongsUpdated: (updatedSongs) {
-                          appState.updateSongsMetadataInPlace(updatedSongs);
-                        },
-                        runWithPlaybackSuspended: (action) =>
-                            appState.runWithPlaybackSuspendedForBatchTagWrite(
-                          action,
-                          targetFilePaths:
-                              albumSongs.map((s) => s.data).toSet(),
-                          itemCount: albumSongs.length,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.album_rounded),
-                  title: const Text('Open Album'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    widget.onOpenAlbum(album.representativeSong);
-                  },
-                ),
-              ],
-            ),
+    final headerThumbnail = ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: FastArtworkWidget(
+        id: album.albumId,
+        type: ArtworkType.ALBUM,
+        width: 48,
+        height: 48,
+        nullArtworkWidget: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
           ),
-        );
-      },
+          child: Icon(
+            Icons.album_rounded,
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+
+    final headerSubtitle =
+        '${widget.artistName} • ${album.year > 0 ? '${album.year} • ' : ''}${album.trackCount} tracks';
+
+    showAppActionSheet<void>(
+      context: context,
+      headerThumbnail: headerThumbnail,
+      headerTitle: album.title,
+      headerSubtitle: headerSubtitle,
+      items: [
+        AppActionItem(
+          icon: Icons.album_rounded,
+          title: 'Open Album',
+          subtitle: 'View all tracks in this album',
+          onTap: () => widget.onOpenAlbum(album.representativeSong),
+        ),
+        AppActionItem(
+          icon: Icons.play_arrow_rounded,
+          title: 'Play Album',
+          subtitle: 'Start playback from track 1',
+          onTap: () async {
+            if (albumSongs.isNotEmpty) {
+              await playbackController.playFromQueue(albumSongs, initialIndex: 0);
+            }
+          },
+        ),
+        AppActionItem(
+          icon: Icons.playlist_add_rounded,
+          title: 'Play next',
+          subtitle: 'Insert album tracks after current song',
+          onTap: () async {
+            if (albumSongs.isNotEmpty) {
+              await playbackController.insertAllInQueue(albumSongs);
+            }
+          },
+        ),
+        AppActionItem(
+          icon: Icons.queue_music_rounded,
+          title: 'Add to queue',
+          subtitle: 'Append album tracks to queue end',
+          onTap: () async {
+            if (albumSongs.isNotEmpty) {
+              await playbackController.addAllToQueueEnd(albumSongs);
+            }
+          },
+        ),
+        AppActionItem(
+          icon: Icons.shuffle_rounded,
+          title: 'Shuffle Album',
+          subtitle: 'Shuffle and play tracks in this album',
+          onTap: () async {
+            if (albumSongs.isNotEmpty) {
+              final shuffled = List<SongModel>.from(albumSongs)..shuffle();
+              await playbackController.playFromQueue(shuffled, initialIndex: 0);
+            }
+          },
+        ),
+        AppActionItem(
+          icon: Icons.tune_rounded,
+          title: 'Edit Album Tags',
+          subtitle: 'Batch edit tags across all album tracks',
+          onTap: () async {
+            if (albumSongs.isEmpty) return;
+            final appState = AppStateController.instance;
+            await showDialog<void>(
+              context: context,
+              builder: (ctx) => BatchTagEditorDialog(
+                songs: albumSongs,
+                onSaved: () {},
+                onSongsUpdated: (updatedSongs) {
+                  appState.updateSongsMetadataInPlace(updatedSongs);
+                },
+                runWithPlaybackSuspended: (action) =>
+                    appState.runWithPlaybackSuspendedForBatchTagWrite(
+                  action,
+                  targetFilePaths:
+                      albumSongs.map((s) => s.data).toSet(),
+                  itemCount: albumSongs.length,
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -367,11 +352,13 @@ class _ArtistPageState extends State<ArtistPage> {
         widget.albums.isNotEmpty ? widget.albums.first.albumId : 0;
     final allSongs = _allArtistSongs();
 
-    final content = FutureBuilder<
-        ({Color primary, Color secondary, Color tertiary})?>(
-      future: _paletteFuture,
-      initialData: _paletteCache[paletteAlbumId],
-      builder: (context, snap) {
+    final content = Material(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: FutureBuilder<
+          ({Color primary, Color secondary, Color tertiary})?>(
+        future: _paletteFuture,
+        initialData: _paletteCache[paletteAlbumId],
+        builder: (context, snap) {
         final p = snap.data;
         final bgA = p?.primary;
         final bgB = p?.secondary;
@@ -398,17 +385,24 @@ class _ArtistPageState extends State<ArtistPage> {
         return Stack(
           children: [
             Positioned.fill(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOutCubic,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [top, mid, accent, cs.surface],
-                    stops: const [0.0, 0.35, 0.70, 1.0],
-                  ),
-                ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 320),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: p != null
+                    ? DecoratedBox(
+                        key: ValueKey<int>(Object.hash(bgA, bgB)),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [top, mid, accent, cs.surface],
+                            stops: const [0.0, 0.35, 0.70, 1.0],
+                          ),
+                        ),
+                        child: const SizedBox.expand(),
+                      )
+                    : const SizedBox.expand(key: ValueKey<String>('empty_palette')),
               ),
             ),
             StreamBuilder<int?>(
@@ -750,11 +744,11 @@ class _ArtistPageState extends State<ArtistPage> {
                                 ),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 14,
-                                  vertical: 8,
+                                  vertical: 10,
                                 ),
                                 margin: const EdgeInsets.symmetric(
                                   horizontal: 12,
-                                  vertical: 3,
+                                  vertical: 3.5,
                                 ),
                                 backgroundColor: isThisAlbumPlaying
                                     ? cs.primaryContainer.withValues(
@@ -785,7 +779,8 @@ class _ArtistPageState extends State<ArtistPage> {
           ],
         );
       },
-    );
+    ),
+  );
 
     if (widget.embeddedInHome) return content;
 

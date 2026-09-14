@@ -156,13 +156,22 @@ class MyApp extends StatelessWidget {
               _overlayForBrightness(effectiveBrightness),
             );
 
-            return MaterialApp.router(
-              title: 'Expressive Music',
-              themeMode: themeMode,
-              debugShowCheckedModeBanner: false,
-              routerConfig: appRouter,
-              theme: buildTheme(lightScheme, Brightness.light),
-              darkTheme: buildTheme(darkScheme, Brightness.dark),
+            return ValueListenableBuilder<bool>(
+              valueListenable: appIsForeground,
+              builder: (context, isFg, child) {
+                return TickerMode(
+                  enabled: isFg,
+                  child: child!,
+                );
+              },
+              child: MaterialApp.router(
+                title: 'Expressive Music',
+                themeMode: themeMode,
+                debugShowCheckedModeBanner: false,
+                routerConfig: appRouter,
+                theme: buildTheme(lightScheme, Brightness.light),
+                darkTheme: buildTheme(darkScheme, Brightness.dark),
+              ),
             );
           },
         );

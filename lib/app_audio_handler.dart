@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
+import 'services/app_lifecycle_observer.dart';
 
 /// Describes the current audio focus relationship with the OS.
 enum AudioFocusState {
@@ -50,6 +51,12 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       (_) => _broadcastState(),
     );
     _loopSub = player.loopModeStream.listen((_) => _broadcastState());
+
+    appIsForeground.addListener(() {
+      if (appIsForeground.value && player.playing) {
+        _broadcastState();
+      }
+    });
 
     _broadcastState();
   }
@@ -122,7 +129,7 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await _setNormalVolume();
       if (player.playing && player.volume <= 0.001) {
         await player.pause();
-        await player.play();
+        unawaited(player.play());
       }
     } catch (_) {}
   }
@@ -168,7 +175,7 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     try {
       await player.pause();
       await Future<void>.delayed(const Duration(milliseconds: 150));
-      await player.play();
+      unawaited(player.play());
       _lastPlaybackProgressAt = DateTime.now();
       _lastPlaybackPosition = player.position;
     } catch (_) {}
@@ -180,7 +187,21 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     try {
       final session = await AudioSession.instance;
       _session = session;
-      await session.configure(const AudioSessionConfiguration.music());
+      await session.configure(
+        const AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playback,
+          avAudioSessionMode: AVAudioSessionMode.defaultMode,
+          avAudioSessionRouteSharingPolicy:
+              AVAudioSessionRouteSharingPolicy.defaultPolicy,
+          androidAudioAttributes: AndroidAudioAttributes(
+            contentType: AndroidAudioContentType.music,
+            flags: AndroidAudioFlags.none,
+            usage: AndroidAudioUsage.media,
+          ),
+          androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+          androidWillPauseWhenDucked: false,
+        ),
+      );
 
       _baselineVolume = player.volume.clamp(0.0, 1.0);
 
@@ -237,10 +258,13 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
         case AudioInterruptionType.pause:
           // Transient focus loss (e.g. phone call, assistant prompt, transient audio from another app).
-          final wasPlaying = player.playing;
-          _playInterruptedByFocus = wasPlaying;
+          // Only record player.playing on the initial interruption event so subsequent call events
+          // (ringtone -> answered -> audio mode change) don't overwrite _playInterruptedByFocus with false!
+          if (!_playInterruptedByFocus) {
+            _playInterruptedByFocus = player.playing;
+          }
           _setFocusState(AudioFocusState.transientLoss);
-          if (wasPlaying) {
+          if (player.playing) {
             try {
               await player.pause();
             } catch (_) {}
@@ -283,13 +307,20 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
         if (shouldResume) {
           try {
-            await _session?.setActive(true);
+            // Give Android OS audio pipeline 250ms to switch hardware routes
+            // (e.g., from VOICE_CALL/EARPIECE/SCO back to MEDIA/A2DP/SPEAKER).
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+            final active = await _session?.setActive(true);
+            if (active == false) {
+              await Future<void>.delayed(const Duration(milliseconds: 150));
+              await _session?.setActive(true);
+            }
           } catch (_) {}
           try {
             await _setNormalVolume();
           } catch (_) {}
           try {
-            await player.play();
+            unawaited(player.play());
             _lastPlaybackProgressAt = DateTime.now();
             _lastPlaybackPosition = player.position;
           } catch (_) {}
@@ -331,7 +362,11 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       _positionUpdateTimer ??= Timer.periodic(const Duration(seconds: 5), (_) {
         _recordPlaybackProgress();
         unawaited(_recoverFromStuckPlaybackIfNeeded());
-        _broadcastState();
+        // Only broadcast periodic position ticks when in foreground.
+        // In background, Android MediaSession natively interpolates progress at 1.0x speed.
+        if (appIsForeground.value) {
+          _broadcastState();
+        }
       });
     } else {
       _positionUpdateTimer?.cancel();

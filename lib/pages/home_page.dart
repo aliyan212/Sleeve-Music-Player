@@ -1,4 +1,5 @@
 
+import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -22,11 +23,17 @@ class _MyHomePageState extends State<MyHomePage> {
   final AppStateController _appState = AppStateController.instance;
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<bool> _showSearchInAppBar = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> _isVerticalDragActive = ValueNotifier<bool>(false);
+  Offset? _pointerDownPos;
+  late final PageController _pageController;
+  late int _lastRenderedTabIndex;
 
   @override
   void initState() {
     super.initState();
     playbackController.attachStreamListeners();
+    _lastRenderedTabIndex = widget.initialTabIndex;
+    _pageController = PageController(initialPage: widget.initialTabIndex);
     _appState.selectedTabIndex = widget.initialTabIndex;
     _appState.ensureLibraryPermissionAndLoad(fromUserAction: false);
     _appState.loadUserPlaylists();
@@ -37,14 +44,28 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void dispose() {
     _appState.removeListener(_onAppStateChanged);
+    _pageController.dispose();
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     _showSearchInAppBar.dispose();
+    _isVerticalDragActive.dispose();
     super.dispose();
   }
 
   void _onAppStateChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final currentTarget = _appState.selectedTabIndex;
+    if (_lastRenderedTabIndex != currentTarget) {
+      _lastRenderedTabIndex = currentTarget;
+      if (_pageController.hasClients && _pageController.page?.round() != currentTarget) {
+        _pageController.animateToPage(
+          currentTarget,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    }
+    setState(() {});
   }
 
   void _handleScroll() {
@@ -72,6 +93,7 @@ class _MyHomePageState extends State<MyHomePage> {
           onOpenNowPlaying: (song) => _appState.openNowPlaying(song),
           selectedTabIndex: _appState.selectedTabIndex,
           onNavigateTab: _appState.selectTab,
+          enableHero: true,
         ),
       ),
     );
@@ -111,36 +133,115 @@ class _MyHomePageState extends State<MyHomePage> {
               : Stack(
                   fit: StackFit.expand,
                   children: [
-                    Offstage(
-                      offstage: _appState.inlineDetailContent != null,
-                      child: IndexedStack(
-                        index: _appState.selectedTabIndex,
-                        children: [
-                          KeyedSubtree(
-                            key: const PageStorageKey<String>('tab_library'),
-                            child: LibraryTab(
-                              scrollController: _scrollController,
-                              searchController: _appState.searchController,
-                              showSearchInAppBar: _showSearchInAppBar,
-                            ),
+                    IgnorePointer(
+                      ignoring: _appState.inlineDetailContent != null,
+                      child: Listener(
+                        onPointerDown: (e) {
+                          _pointerDownPos = e.position;
+                        },
+                        onPointerMove: (e) {
+                          if (_pointerDownPos != null && !_isVerticalDragActive.value) {
+                            final dx = (e.position.dx - _pointerDownPos!.dx).abs();
+                            final dy = (e.position.dy - _pointerDownPos!.dy).abs();
+                            // When dragging vertically or diagonally, lock horizontal swipe
+                            // so vertical lists scroll smoothly without accidental tab switches.
+                            if (dy > 6.0 && dy >= dx) {
+                              _isVerticalDragActive.value = true;
+                            }
+                          }
+                        },
+                        onPointerUp: (_) {
+                          _pointerDownPos = null;
+                          if (_isVerticalDragActive.value) {
+                            _isVerticalDragActive.value = false;
+                          }
+                        },
+                        onPointerCancel: (_) {
+                          _pointerDownPos = null;
+                          if (_isVerticalDragActive.value) {
+                            _isVerticalDragActive.value = false;
+                          }
+                        },
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: (notification) {
+                            if (notification.metrics.axis == Axis.vertical) {
+                              if (notification is ScrollStartNotification &&
+                                  notification.dragDetails != null) {
+                                if (!_isVerticalDragActive.value) {
+                                  _isVerticalDragActive.value = true;
+                                }
+                              } else if (notification is ScrollEndNotification) {
+                                if (_isVerticalDragActive.value) {
+                                  _isVerticalDragActive.value = false;
+                                }
+                              }
+                            }
+                            return false;
+                          },
+                          child: ValueListenableBuilder<bool>(
+                            valueListenable: _isVerticalDragActive,
+                            builder: (context, isVerticalDrag, _) {
+                              return PageView(
+                                controller: _pageController,
+                                physics: (_appState.isSelectionMode || isVerticalDrag)
+                                    ? const NeverScrollableScrollPhysics()
+                                    : const PageScrollPhysics(),
+                                onPageChanged: (index) {
+                                  _lastRenderedTabIndex = index;
+                                  if (_appState.selectedTabIndex != index) {
+                                    _appState.selectTab(index);
+                                  }
+                                },
+                                children: [
+                                  _KeepAlivePage(
+                                    key: const PageStorageKey<String>('tab_library'),
+                                    child: LibraryTab(
+                                      scrollController: _scrollController,
+                                      showSearchInAppBar: _showSearchInAppBar,
+                                    ),
+                                  ),
+                                  const _KeepAlivePage(
+                                    key: PageStorageKey<String>('tab_albums'),
+                                    child: AlbumsTab(),
+                                  ),
+                                  const _KeepAlivePage(
+                                    key: PageStorageKey<String>('tab_artists'),
+                                    child: AlbumArtistsTab(),
+                                  ),
+                                  const _KeepAlivePage(
+                                    key: PageStorageKey<String>('tab_playlists'),
+                                    child: PlaylistsTab(),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
-                          KeyedSubtree(
-                            key: const PageStorageKey<String>('tab_albums'),
-                            child: const AlbumsTab(),
-                          ),
-                          KeyedSubtree(
-                            key: const PageStorageKey<String>('tab_artists'),
-                            child: const AlbumArtistsTab(),
-                          ),
-                          KeyedSubtree(
-                            key: const PageStorageKey<String>('tab_playlists'),
-                            child: const PlaylistsTab(),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                    if (_appState.inlineDetailContent != null)
-                      _appState.inlineDetailContent!,
+                    PageTransitionSwitcher(
+                      reverse: _appState.inlineDetailContent == null,
+                      duration: const Duration(milliseconds: 300),
+                      transitionBuilder: (
+                        Widget child,
+                        Animation<double> primaryAnimation,
+                        Animation<double> secondaryAnimation,
+                      ) {
+                        return SharedAxisTransition(
+                          animation: primaryAnimation,
+                          secondaryAnimation: secondaryAnimation,
+                          transitionType: SharedAxisTransitionType.scaled,
+                          fillColor: Colors.transparent,
+                          child: child,
+                        );
+                      },
+                      child: _appState.inlineDetailContent != null
+                          ? KeyedSubtree(
+                              key: ValueKey<int>(_appState.inlineDetailContent.hashCode),
+                              child: _appState.inlineDetailContent!,
+                            )
+                          : const SizedBox.shrink(key: ValueKey<String>('empty_detail')),
+                    ),
                   ],
                 ),
       ),
@@ -223,5 +324,25 @@ class _LibraryPermissionGate extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _KeepAlivePage extends StatefulWidget {
+  final Widget child;
+  const _KeepAlivePage({super.key, required this.child});
+
+  @override
+  State<_KeepAlivePage> createState() => _KeepAlivePageState();
+}
+
+class _KeepAlivePageState extends State<_KeepAlivePage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

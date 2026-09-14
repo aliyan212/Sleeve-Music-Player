@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import '../services/local_audio_scanner.dart';
@@ -140,7 +141,10 @@ void showManageFoldersDialog({
                 child: Column(
                   children: [
                     TabBar(
-                      onTap: (i) => activeTab = i,
+                      onTap: (i) {
+                        HapticFeedback.selectionClick();
+                        activeTab = i;
+                      },
                       labelColor: cs.primary,
                       unselectedLabelColor: cs.onSurfaceVariant,
                       tabs: const [
@@ -170,6 +174,7 @@ void showManageFoldersDialog({
                               style: const TextStyle(fontSize: 12),
                             ),
                             onPressed: () {
+                              HapticFeedback.selectionClick();
                               setModalState(() {
                                 if (activeTab == 0) {
                                   included.add(folder);

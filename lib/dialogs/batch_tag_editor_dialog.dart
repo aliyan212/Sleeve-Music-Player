@@ -494,6 +494,7 @@ class _BatchTagEditorDialogState extends State<BatchTagEditorDialog> {
         }
 
         if (!mounted) return;
+        final cs = Theme.of(context).colorScheme;
         final messenger = ScaffoldMessenger.maybeOf(context);
         Navigator.of(context).pop(true);
 
@@ -505,8 +506,27 @@ class _BatchTagEditorDialogState extends State<BatchTagEditorDialog> {
             : 'Successfully updated ${updatedSongs.length} tracks';
         messenger?.showSnackBar(
           SnackBar(
-            content: Text(msg),
-            backgroundColor: failedCount > 0 ? Colors.orange : Colors.green,
+            backgroundColor: failedCount > 0 ? cs.errorContainer : null,
+            content: Row(
+              children: [
+                Icon(
+                  failedCount > 0
+                      ? Icons.error_outline_rounded
+                      : Icons.check_circle_rounded,
+                  color: failedCount > 0 ? cs.onErrorContainer : cs.primary,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    msg,
+                    style: TextStyle(
+                      color: failedCount > 0 ? cs.onErrorContainer : null,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       }
@@ -521,9 +541,24 @@ class _BatchTagEditorDialogState extends State<BatchTagEditorDialog> {
       debugPrintStack(stackTrace: st);
       if (!mounted) return;
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error saving tags: $e')));
+      final cs = Theme.of(context).colorScheme;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: cs.errorContainer,
+          content: Row(
+            children: [
+              Icon(Icons.error_outline_rounded, color: cs.onErrorContainer, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Error saving tags: $e',
+                  style: TextStyle(color: cs.onErrorContainer),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
   }
 

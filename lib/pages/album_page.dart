@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:just_audio/just_audio.dart';
+import 'now_playing_page.dart';
 import '../utils/palette_compute.dart';
 import '../ui/shared/fast_artwork_widget.dart';
 import '../utils/format_utils.dart';
@@ -31,7 +32,7 @@ class AlbumPage extends StatefulWidget {
   final Future<void> Function()? onShuffle;
 
   static final LinkedHashMap<int, ({Color primary, Color secondary, Color tertiary})>
-  _albumPaletteCache =
+  albumPaletteCache =
       LinkedHashMap<int, ({Color primary, Color secondary, Color tertiary})>();
   static const int _albumPaletteCacheMax = 30;
 
@@ -80,9 +81,9 @@ class AlbumPage extends StatefulWidget {
     bool isDark,
   ) async {
     try {
-      final cached = _albumPaletteCache.remove(albumId);
+      final cached = albumPaletteCache.remove(albumId);
       if (cached != null) {
-        _albumPaletteCache[albumId] = cached;
+        albumPaletteCache[albumId] = cached;
         return cached;
       }
 
@@ -119,10 +120,10 @@ class AlbumPage extends StatefulWidget {
         secondary: secondary,
         tertiary: tertiary,
       );
-      _albumPaletteCache.remove(albumId);
-      _albumPaletteCache[albumId] = value;
-      while (_albumPaletteCache.length > _albumPaletteCacheMax) {
-        _albumPaletteCache.remove(_albumPaletteCache.keys.first);
+      albumPaletteCache.remove(albumId);
+      albumPaletteCache[albumId] = value;
+      while (albumPaletteCache.length > _albumPaletteCacheMax) {
+        albumPaletteCache.remove(albumPaletteCache.keys.first);
       }
       return value;
     } catch (_) {
@@ -161,9 +162,11 @@ class AlbumPage extends StatefulWidget {
 
     final hasMultipleDiscs = currentSongs.map(discFromSong).toSet().length > 1;
 
-    final content = FutureBuilder<({Color primary, Color secondary, Color tertiary})?>(
+    final content = Material(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: FutureBuilder<({Color primary, Color secondary, Color tertiary})?>(
         future: paletteFuture,
-        initialData: _albumPaletteCache[albumId],
+        initialData: AlbumPage.albumPaletteCache[albumId],
         builder: (context, snap) {
           final p = snap.data;
           final bgA = p?.primary;
@@ -191,17 +194,24 @@ class AlbumPage extends StatefulWidget {
           return Stack(
             children: [
               Positioned.fill(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeOutCubic,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [top, mid, accent, cs.surface],
-                      stops: const [0.0, 0.35, 0.70, 1.0],
-                    ),
-                  ),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 320),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  child: p != null
+                      ? DecoratedBox(
+                          key: ValueKey<int>(Object.hash(bgA, bgB)),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [top, mid, accent, cs.surface],
+                              stops: const [0.0, 0.35, 0.70, 1.0],
+                            ),
+                          ),
+                          child: const SizedBox.expand(),
+                        )
+                      : const SizedBox.expand(key: ValueKey<String>('empty_palette')),
                 ),
               ),
               StreamBuilder<int?>(
@@ -300,8 +310,8 @@ class AlbumPage extends StatefulWidget {
                                 fontFeatures: const [FontFeature.tabularFigures()],
                               ),
                             ),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2.5),
                             backgroundColor: isCurrent
                                 ? cs.primaryContainer.withValues(
                                     alpha: isDark ? 0.32 : 0.50,
@@ -396,7 +406,9 @@ class AlbumPage extends StatefulWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  Container(
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 320),
+                                    curve: Curves.easeOutCubic,
                                     width: 170,
                                     height: 170,
                                     decoration: BoxDecoration(
@@ -415,10 +427,18 @@ class AlbumPage extends StatefulWidget {
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(22),
                                       child: FastArtworkWidget(
-                                        id: albumId,
-                                        type: ArtworkType.ALBUM,
+                                        id: currentSongs.isNotEmpty
+                                            ? currentSongs.first.id
+                                            : albumId,
+                                        type: currentSongs.isNotEmpty
+                                            ? ArtworkType.AUDIO
+                                            : ArtworkType.ALBUM,
+                                        fallbackId: albumId,
+                                        fallbackType: ArtworkType.ALBUM,
                                         width: 170,
                                         height: 170,
+                                        size: 800,
+                                        quality: 100,
                                         artworkFit: BoxFit.cover,
                                         nullArtworkWidget: Container(
                                           width: 170,
@@ -576,10 +596,11 @@ class AlbumPage extends StatefulWidget {
                   );
                 },
               ),
-            ],
-          );
-        },
-      );
+          ],
+        );
+      },
+    ),
+  );
 
     if (embeddedInHome) return content;
 
@@ -622,6 +643,15 @@ class _AlbumPageState extends State<AlbumPage> {
     _albumArtist = widget.albumArtist;
     _scrollController = ScrollController()..addListener(_onScroll);
     _lastBrightness = WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    if (!AlbumPage.albumPaletteCache.containsKey(widget.albumId)) {
+      for (final s in _songs) {
+        final seeded = NowPlayingPage.paletteCache[s.id];
+        if (seeded != null) {
+          AlbumPage.albumPaletteCache[widget.albumId] = seeded;
+          break;
+        }
+      }
+    }
     _paletteFuture = AlbumPage._loadAlbumPalette(
       widget.albumId,
       _lastBrightness == Brightness.dark,

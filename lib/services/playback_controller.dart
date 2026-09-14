@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -205,6 +206,7 @@ class PlaybackController {
   Future<void> stop() => _player.stop();
 
   Future<void> togglePlayPause() async {
+    HapticFeedback.lightImpact();
     if (isActuallyPlaying) {
       await _player.pause();
     } else {
@@ -373,7 +375,7 @@ class PlaybackController {
       } else {
         await _player.seek(Duration.zero, index: index);
       }
-      await _player.play();
+      unawaited(_player.play());
       recordPlayForSongId(songs[index].id);
     } catch (e, st) {
       debugPrint('Failed to play song index=$index: $e');
@@ -410,7 +412,7 @@ class PlaybackController {
         newPlaylist,
         initialIndex: initialIndex,
       );
-      await _player.play();
+      unawaited(_player.play());
       recordPlayForSongId(songId);
     } catch (e, st) {
       debugPrint(
@@ -427,31 +429,78 @@ class PlaybackController {
   // ── Queue operations ───────────────────────────────────────────────
 
   Future<void> insertInQueue(SongModel song) async {
-    if (_player.currentIndex == null) return;
-    final insertAt = (_player.currentIndex! + 1).clamp(
-      0,
-      _player.audioSources.length,
-    );
+    if (_currentQueue.isEmpty && _player.audioSources.isEmpty) {
+      await playFromQueue([song], initialIndex: 0);
+      return;
+    }
+    final targetIndex = _player.currentIndex;
+    final insertAt = targetIndex != null
+        ? (targetIndex + 1).clamp(0, _currentQueue.length)
+        : (_currentQueue.isNotEmpty ? 1 : 0).clamp(0, _currentQueue.length);
+
     if (_currentQueue.isNotEmpty && insertAt <= _currentQueue.length) {
       _currentQueue.insert(insertAt, song);
     }
     try {
-      await _player.insertAudioSource(insertAt, sourceForSong(song));
+      final audioInsertAt = insertAt.clamp(0, _player.audioSources.length);
+      await _player.insertAudioSource(audioInsertAt, sourceForSong(song));
+    } catch (_) {}
+  }
+
+  Future<void> insertAllInQueue(List<SongModel> songsToInsert) async {
+    if (songsToInsert.isEmpty) return;
+    if (_currentQueue.isEmpty && _player.audioSources.isEmpty) {
+      await playFromQueue(songsToInsert, initialIndex: 0);
+      return;
+    }
+    final targetIndex = _player.currentIndex;
+    final insertAt = targetIndex != null
+        ? (targetIndex + 1).clamp(0, _currentQueue.length)
+        : (_currentQueue.isNotEmpty ? 1 : 0).clamp(0, _currentQueue.length);
+
+    if (_currentQueue.isNotEmpty && insertAt <= _currentQueue.length) {
+      _currentQueue.insertAll(insertAt, songsToInsert);
+    }
+    try {
+      final audioInsertAt = insertAt.clamp(0, _player.audioSources.length);
+      for (var i = 0; i < songsToInsert.length; i++) {
+        await _player.insertAudioSource(
+          audioInsertAt + i,
+          sourceForSong(songsToInsert[i]),
+        );
+      }
     } catch (_) {}
   }
 
   Future<void> addToQueueEnd(SongModel song) async {
-    if (_currentQueue.isNotEmpty) {
-      _currentQueue.add(song);
+    if (_currentQueue.isEmpty && _player.audioSources.isEmpty) {
+      await playFromQueue([song], initialIndex: 0);
+      return;
     }
+    _currentQueue.add(song);
     try {
       await _player.addAudioSource(sourceForSong(song));
+    } catch (_) {}
+  }
+
+  Future<void> addAllToQueueEnd(List<SongModel> songsToAdd) async {
+    if (songsToAdd.isEmpty) return;
+    if (_currentQueue.isEmpty && _player.audioSources.isEmpty) {
+      await playFromQueue(songsToAdd, initialIndex: 0);
+      return;
+    }
+    _currentQueue.addAll(songsToAdd);
+    try {
+      for (final song in songsToAdd) {
+        await _player.addAudioSource(sourceForSong(song));
+      }
     } catch (_) {}
   }
 
   // ── Sort ───────────────────────────────────────────────────────────
 
   Future<void> applySort(SortMode mode) async {
+    HapticFeedback.selectionClick();
     sortMode = mode;
     if (songs.isEmpty || currentPlaylist == null) return;
     final currentId =
@@ -557,7 +606,7 @@ class PlaybackController {
         initialIndex: newIndex,
       );
       await _player.seek(pos, index: newIndex);
-      if (wasPlaying) await _player.play();
+      if (wasPlaying) unawaited(_player.play());
       currentPlayIndex = newIndex;
     } else {
       currentPlayIndex = null;
@@ -744,13 +793,11 @@ class PlaybackController {
       // Wait 200ms to allow native Android ExoPlayer / OS threads to close file descriptors.
       await Future<void>.delayed(const Duration(milliseconds: 200));
 
-      // Step 2: Perform tag/lyrics write action
-      await action();
       // Step 2: Perform tag/lyrics write action with timeout guard
       await action().timeout(
-        const Duration(seconds: 8),
+        const Duration(seconds: 15),
         onTimeout: () {
-          debugPrint('Tag write action timed out after 8s');
+          throw TimeoutException('Tag write action timed out after 15s');
         },
       );
     } finally {
@@ -775,11 +822,6 @@ class PlaybackController {
         if (targetIndex < 0) targetIndex = 0;
 
         if (freshPlaylist.isNotEmpty) {
-          await _player.setAudioSources(
-            freshPlaylist,
-            initialIndex: targetIndex,
-            initialPosition: pos,
-          );
           await _player
               .setAudioSources(
                 freshPlaylist,
@@ -787,7 +829,7 @@ class PlaybackController {
                 initialPosition: pos,
               )
               .timeout(
-                const Duration(seconds: 3),
+                const Duration(seconds: 5),
                 onTimeout: () {
                   debugPrint(
                     'Timed out restoring audio sources after tag write',
@@ -796,7 +838,6 @@ class PlaybackController {
                 },
               );
           if (wasPlaying) {
-            await _player.play();
             unawaited(_player.play());
           }
         }

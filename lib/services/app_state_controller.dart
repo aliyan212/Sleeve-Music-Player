@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -857,6 +858,7 @@ class AppStateController extends ChangeNotifier
   }
 
   Future<void> applyAlbumArtistsSort(AlbumArtistsSort mode) async {
+    HapticFeedback.selectionClick();
     albumArtistsSort = mode;
     await saveAlbumArtistsSortPreference(mode);
     recomputeAllData();
@@ -864,6 +866,7 @@ class AppStateController extends ChangeNotifier
   }
 
   Future<void> applyAlbumsSort(AlbumsSort mode) async {
+    HapticFeedback.selectionClick();
     albumsSort = mode;
     await saveAlbumsSortPreference(mode);
     recomputeAllData();
@@ -901,7 +904,7 @@ class AppStateController extends ChangeNotifier
         newPlaylist,
         initialIndex: initialIndex,
       );
-      await _controller.player.play();
+      unawaited(_controller.player.play());
       _controller.recordPlayForSongId(songId);
     } catch (e, st) {
       debugPrint('Failed to play custom queue initialIndex=$initialIndex: $e');
@@ -924,6 +927,16 @@ class AppStateController extends ChangeNotifier
     if (index < 0 || index >= songs.length) return;
     await checkNotificationPermission();
     await _controller.playSong(index);
+  }
+
+  Future<void> insertAllInQueue(List<SongModel> songsToInsert) async {
+    await checkNotificationPermission();
+    await _controller.insertAllInQueue(songsToInsert);
+  }
+
+  Future<void> addAllToQueueEnd(List<SongModel> songsToAdd) async {
+    await checkNotificationPermission();
+    await _controller.addAllToQueueEnd(songsToAdd);
   }
 }
 

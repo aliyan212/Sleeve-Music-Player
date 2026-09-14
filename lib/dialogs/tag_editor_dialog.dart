@@ -398,6 +398,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
         );
       }
 
+      final cs = Theme.of(context).colorScheme;
       final messenger = ScaffoldMessenger.maybeOf(context);
       Navigator.pop(context, true);
 
@@ -405,18 +406,39 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
       widget.onSaved();
 
       messenger?.showSnackBar(
-        const SnackBar(
-          content: Text('Tags saved successfully'),
-          backgroundColor: Colors.green,
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: cs.primary, size: 20),
+              const SizedBox(width: 12),
+              const Text('Tags saved successfully'),
+            ],
+          ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
+      final cs = Theme.of(context).colorScheme;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to save tags: $e'),
-          backgroundColor: Colors.red,
-          action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+          backgroundColor: cs.errorContainer,
+          content: Row(
+            children: [
+              Icon(Icons.error_outline_rounded, color: cs.onErrorContainer, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Failed to save tags: $e',
+                  style: TextStyle(color: cs.onErrorContainer),
+                ),
+              ),
+            ],
+          ),
+          action: SnackBarAction(
+            label: 'Settings',
+            textColor: cs.onErrorContainer,
+            onPressed: openAppSettings,
+          ),
         ),
       );
     } finally {
