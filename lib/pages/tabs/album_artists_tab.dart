@@ -34,115 +34,158 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
     return ListenableBuilder(
       listenable: appState,
       builder: (context, _) {
-        final cachedAlbumArtists = appState.cachedAlbumArtists;
         final albumArtistsSort = appState.albumArtistsSort;
+        final viewMode = appState.artistsViewMode;
 
-  
-    final artists = cachedAlbumArtists;
-
-    String sortLabel(AlbumArtistsSort s) {
-      switch (s) {
-        case AlbumArtistsSort.nameAsc:
-          return 'Name (A → Z)';
-        case AlbumArtistsSort.nameDesc:
-          return 'Name (Z → A)';
-        case AlbumArtistsSort.mostAlbums:
-          return 'Most Albums';
-        case AlbumArtistsSort.leastAlbums:
-          return 'Least Albums';
-        case AlbumArtistsSort.mostTracks:
-          return 'Most Tracks';
-        case AlbumArtistsSort.leastTracks:
-          return 'Least Tracks';
-      }
-    }
-
-    final cs = Theme.of(context).colorScheme;
-
-    final isNumeric = albumArtistsSort == AlbumArtistsSort.mostAlbums ||
-        albumArtistsSort == AlbumArtistsSort.leastAlbums ||
-        albumArtistsSort == AlbumArtistsSort.mostTracks ||
-        albumArtistsSort == AlbumArtistsSort.leastTracks;
-
-    return AlphabeticalBubbleScroller(
-      scrollController: _scrollController,
-      itemCount: artists.length,
-      headerHeight: 142.0,
-      itemHeight: 80.0,
-      sortKey: albumArtistsSort,
-      isNumericSort: isNumeric,
-      sectionKeyOf: (index) {
-        final a = artists[index];
-        switch (albumArtistsSort) {
-          case AlbumArtistsSort.nameAsc:
-          case AlbumArtistsSort.nameDesc:
-            return a.name;
-          case AlbumArtistsSort.mostAlbums:
-          case AlbumArtistsSort.leastAlbums:
-            return '${a.albumCount}';
-          case AlbumArtistsSort.mostTracks:
-          case AlbumArtistsSort.leastTracks:
-            return '${a.trackCount}';
+        final List<AlbumArtistStat> artists;
+        switch (viewMode) {
+          case ArtistsViewMode.albumArtists:
+            artists = appState.cachedAlbumArtists;
+            break;
+          case ArtistsViewMode.artists:
+            artists = appState.cachedTrackArtists;
+            break;
+          case ArtistsViewMode.composers:
+            artists = appState.cachedComposers;
+            break;
         }
-      },
-      child: CustomScrollView(
-        controller: _scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-            SliverAppBar.large(
-              title: const Text('Album Artists'),
-              expandedHeight: 164,
-              backgroundColor: cs.surface.withValues(alpha: 0.90),
-              surfaceTintColor: Colors.transparent,
-              foregroundColor: cs.onSurface,
-              titleTextStyle: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: cs.onSurface,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
+
+        String sortLabel(AlbumArtistsSort s) {
+          switch (s) {
+            case AlbumArtistsSort.nameAsc:
+              return 'Name (A → Z)';
+            case AlbumArtistsSort.nameDesc:
+              return 'Name (Z → A)';
+            case AlbumArtistsSort.mostAlbums:
+              return 'Most Albums';
+            case AlbumArtistsSort.leastAlbums:
+              return 'Least Albums';
+            case AlbumArtistsSort.mostTracks:
+              return 'Most Tracks';
+            case AlbumArtistsSort.leastTracks:
+              return 'Least Tracks';
+          }
+        }
+
+        final cs = Theme.of(context).colorScheme;
+
+        final isNumeric = albumArtistsSort == AlbumArtistsSort.mostAlbums ||
+            albumArtistsSort == AlbumArtistsSort.leastAlbums ||
+            albumArtistsSort == AlbumArtistsSort.mostTracks ||
+            albumArtistsSort == AlbumArtistsSort.leastTracks;
+
+        return AlphabeticalBubbleScroller(
+          scrollController: _scrollController,
+          itemCount: artists.length,
+          headerHeight: 200.0,
+          itemHeight: 80.0,
+          sortKey: albumArtistsSort,
+          isNumericSort: isNumeric,
+          sectionKeyOf: (index) {
+            final a = artists[index];
+            switch (albumArtistsSort) {
+              case AlbumArtistsSort.nameAsc:
+              case AlbumArtistsSort.nameDesc:
+                return a.name;
+              case AlbumArtistsSort.mostAlbums:
+              case AlbumArtistsSort.leastAlbums:
+                return '${a.albumCount}';
+              case AlbumArtistsSort.mostTracks:
+              case AlbumArtistsSort.leastTracks:
+                return '${a.trackCount}';
+            }
+          },
+          child: CustomScrollView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverAppBar.large(
+                title: Text(viewMode.label),
+                expandedHeight: 164,
+                backgroundColor: cs.surface.withValues(alpha: 0.90),
+                surfaceTintColor: Colors.transparent,
+                foregroundColor: cs.onSurface,
+                titleTextStyle: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: cs.onSurface,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                ),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.search_rounded),
+                    tooltip: 'Search',
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      appState.openSearch(initialFilter: SearchFilter.artists);
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.sort_rounded),
+                    tooltip: 'Sort ${viewMode.label.toLowerCase()}',
+                    onPressed: () {
+                      showAlbumArtistsSortBottomSheet(
+                        context,
+                        currentSort: albumArtistsSort,
+                        onSortSelected: (mode) {
+                          appState.applyAlbumArtistsSort(mode);
+                        },
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                ],
               ),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.search_rounded),
-                  tooltip: 'Search',
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    appState.openSearch(initialFilter: SearchFilter.artists);
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.sort_rounded),
-                  tooltip: 'Sort album artists',
-                  onPressed: () {
-                    showAlbumArtistsSortBottomSheet(
-                      context,
-                      currentSort: albumArtistsSort,
-                      onSortSelected: (mode) {
-                        appState.applyAlbumArtistsSort(mode);
-                      },
-                    );
-                  },
-                ),
-                const SizedBox(width: 4),
-              ],
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-                child: Text(
-                  '${artists.length} artists • Sort: ${sortLabel(albumArtistsSort)}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: SegmentedButton<ArtistsViewMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: ArtistsViewMode.albumArtists,
+                        label: Text('Album Artists'),
+                      ),
+                      ButtonSegment(
+                        value: ArtistsViewMode.artists,
+                        label: Text('Artists'),
+                      ),
+                      ButtonSegment(
+                        value: ArtistsViewMode.composers,
+                        label: Text('Composers'),
+                      ),
+                    ],
+                    selected: {viewMode},
+                    onSelectionChanged: (newSelection) {
+                      if (newSelection.isNotEmpty) {
+                        appState.setArtistsViewMode(newSelection.first);
+                      }
+                    },
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                   ),
                 ),
               ),
-            ),
-            if (artists.isEmpty)
-              AppEmptyState.sliver(
-                icon: Icons.person_off_rounded,
-                title: 'No artists found',
-                message: 'Your library does not contain any artists yet.',
-              )
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+                  child: Text(
+                    '${artists.length} ${viewMode.label.toLowerCase()} • Sort: ${sortLabel(albumArtistsSort)}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              if (artists.isEmpty)
+                AppEmptyState.sliver(
+                  icon: Icons.person_off_rounded,
+                  title: 'No ${viewMode.label.toLowerCase()} found',
+                  message: 'Your library does not contain any ${viewMode.label.toLowerCase()} yet.',
+                )
+
             else
               SliverFixedExtentList(
                 itemExtent: 80.0,
@@ -169,11 +212,15 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
                           borderRadius: BorderRadius.circular(20),
                           onTap: () {
                             HapticFeedback.selectionClick();
-                            appState.openArtistPageByName(context, stat.name);
+                            if (viewMode == ArtistsViewMode.composers) {
+                              appState.openComposerPageByName(context, stat.name);
+                            } else {
+                              appState.openArtistPageByName(context, stat.name);
+                            }
                           },
                           onLongPress: () {
                             HapticFeedback.mediumImpact();
-                            _showArtistOptionsModal(context, appState, stat);
+                            _showArtistOptionsModal(context, appState, stat, viewMode);
                           },
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
@@ -271,8 +318,10 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
     BuildContext context,
     AppStateController appState,
     AlbumArtistStat stat,
+    ArtistsViewMode viewMode,
   ) {
     final cs = Theme.of(context).colorScheme;
+    final isComposer = viewMode == ArtistsViewMode.composers;
     final repId = stat.representativeSong?.albumId ??
         stat.representativeSong?.id ??
         0;
@@ -280,6 +329,10 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
     List<SongModel> getArtistSongs() {
       final target = stat.name.toLowerCase().trim();
       return appState.songs.where((s) {
+        if (isComposer) {
+          final c = (s.composer ?? (s.getMap['composer'] as String?))?.toLowerCase().trim();
+          return c == target;
+        }
         final a = (s.artist ?? '').toLowerCase().trim();
         final aa = albumArtistFor(s).toLowerCase().trim();
         return a == target || aa == target;
@@ -306,7 +359,7 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(
-            Icons.person_rounded,
+            isComposer ? Icons.music_note_rounded : Icons.person_rounded,
             color: cs.onSurfaceVariant,
           ),
         ),
@@ -320,15 +373,23 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
       headerSubtitle: '${stat.albumCount} albums • ${stat.trackCount} tracks',
       items: [
         AppActionItem(
-          icon: Icons.person_rounded,
-          title: 'Open Artist',
-          subtitle: 'View albums and tracks by this artist',
-          onTap: () => appState.openArtistPageByName(context, stat.name),
+          icon: isComposer ? Icons.music_note_rounded : Icons.person_rounded,
+          title: isComposer ? 'Open Composer' : 'Open Artist',
+          subtitle: isComposer
+              ? 'View albums and tracks by this composer'
+              : 'View albums and tracks by this artist',
+          onTap: () {
+            if (isComposer) {
+              appState.openComposerPageByName(context, stat.name);
+            } else {
+              appState.openArtistPageByName(context, stat.name);
+            }
+          },
         ),
         AppActionItem(
           icon: Icons.play_arrow_rounded,
           title: 'Play All',
-          subtitle: 'Play all artist songs from the beginning',
+          subtitle: 'Play all songs from the beginning',
           onTap: () async {
             final artistSongs = getArtistSongs();
             if (artistSongs.isNotEmpty) {
@@ -339,7 +400,7 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
         AppActionItem(
           icon: Icons.playlist_add_rounded,
           title: 'Play next',
-          subtitle: 'Insert artist songs after current track',
+          subtitle: 'Insert songs after current track',
           onTap: () async {
             final artistSongs = getArtistSongs();
             if (artistSongs.isNotEmpty) {
@@ -350,7 +411,7 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
         AppActionItem(
           icon: Icons.queue_music_rounded,
           title: 'Add to queue',
-          subtitle: 'Append artist songs to queue end',
+          subtitle: 'Append songs to queue end',
           onTap: () async {
             final artistSongs = getArtistSongs();
             if (artistSongs.isNotEmpty) {
@@ -361,7 +422,7 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
         AppActionItem(
           icon: Icons.shuffle_rounded,
           title: 'Shuffle All',
-          subtitle: 'Shuffle and play all artist songs',
+          subtitle: 'Shuffle and play all songs',
           onTap: () async {
             final artistSongs = getArtistSongs();
             if (artistSongs.isNotEmpty) {

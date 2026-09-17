@@ -138,8 +138,10 @@ class AppSearchView extends StatefulWidget {
     BuildContext context, {
     SearchFilter initialFilter = SearchFilter.all,
     String? initialQuery,
-  }) {
-    return Navigator.of(context).push(
+  }) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => AppSearchView(
           initialFilter: initialFilter,
@@ -147,6 +149,8 @@ class AppSearchView extends StatefulWidget {
         ),
       ),
     );
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
   }
 
   @override
@@ -156,6 +160,7 @@ class AppSearchView extends StatefulWidget {
 class _AppSearchViewState extends State<AppSearchView> {
   late final TextEditingController _controller;
   final FocusNode _focusNode = FocusNode();
+  final GlobalKey _searchBarKey = GlobalKey();
   late SearchFilter _selectedFilter;
   String _query = '';
   List<String> _recentSearches = [];
@@ -176,16 +181,40 @@ class _AppSearchViewState extends State<AppSearchView> {
     }
   }
 
+  void _unfocusAndHideKeyboard() {
+    _focusNode.unfocus();
+    if (mounted) {
+      FocusScope.of(context).unfocus();
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    final renderBox = _searchBarKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox != null && renderBox.hasSize) {
+      final pos = renderBox.localToGlobal(Offset.zero);
+      final rect = pos & renderBox.size;
+      if (!rect.contains(event.position)) {
+        if (_focusNode.hasFocus || (FocusManager.instance.primaryFocus?.hasFocus ?? false)) {
+          _unfocusAndHideKeyboard();
+        }
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _focusNode.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
   void _dismissSearchAndPop() {
-    _focusNode.unfocus();
-    FocusScope.of(context).unfocus();
+    _unfocusAndHideKeyboard();
     Navigator.of(context).pop();
   }
 
@@ -654,58 +683,53 @@ class _AppSearchViewState extends State<AppSearchView> {
     return PopScope(
       canPop: true,
       onPopInvokedWithResult: (didPop, result) {
-        _focusNode.unfocus();
-        FocusManager.instance.primaryFocus?.unfocus();
+        _unfocusAndHideKeyboard();
       },
       child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        body: GestureDetector(
+        body: Listener(
           behavior: HitTestBehavior.translucent,
-          onTap: () {
-            _focusNode.unfocus();
-            FocusScope.of(context).unfocus();
-          },
+          onPointerDown: _handlePointerDown,
           child: SafeArea(
             child: Column(
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                  child: SearchBar(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    autoFocus: true,
-                    onTapOutside: (_) {
-                      _focusNode.unfocus();
-                      FocusScope.of(context).unfocus();
-                    },
-                    hintText: _getHintText(),
-                    leading: IconButton(
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      tooltip: 'Back',
-                      onPressed: () {
-                        HapticFeedback.selectionClick();
-                        _dismissSearchAndPop();
+                  child: KeyedSubtree(
+                    key: _searchBarKey,
+                    child: SearchBar(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      autoFocus: true,
+                      onTapOutside: (_) => _unfocusAndHideKeyboard(),
+                      hintText: _getHintText(),
+                      leading: IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        tooltip: 'Back',
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          _dismissSearchAndPop();
+                        },
+                      ),
+                      trailing: [
+                        if (_controller.text.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded),
+                            tooltip: 'Clear',
+                            onPressed: () {
+                              _controller.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                      ],
+                      onChanged: (val) {
+                        setState(() => _query = val.trim());
+                      },
+                      onSubmitted: (val) {
+                        _recordQueryAndSave(val);
+                        _unfocusAndHideKeyboard();
                       },
                     ),
-                    trailing: [
-                      if (_controller.text.isNotEmpty)
-                        IconButton(
-                          icon: const Icon(Icons.close_rounded),
-                          tooltip: 'Clear',
-                          onPressed: () {
-                            _controller.clear();
-                            setState(() => _query = '');
-                          },
-                        ),
-                    ],
-                    onChanged: (val) {
-                      setState(() => _query = val.trim());
-                    },
-                    onSubmitted: (val) {
-                      _recordQueryAndSave(val);
-                      _focusNode.unfocus();
-                      FocusScope.of(context).unfocus();
-                    },
                   ),
                 ),
                 SingleChildScrollView(
@@ -740,20 +764,28 @@ class _AppSearchViewState extends State<AppSearchView> {
                   color: cs.outlineVariant.withValues(alpha: 0.28),
                 ),
                 Expanded(
-                  child: q.isEmpty
-                      ? _buildRecentSearchesView(cs)
-                      : !hasAnyResults
-                          ? AppEmptyState(
-                              icon: Icons.search_off_rounded,
-                              title: 'No results found',
-                              message:
-                                  'We couldn’t find any matches for "$_query". Check for typos or try searching by artist.',
-                            )
-                          : ListView(
-                              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              children: resultItems,
-                            ),
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      if (notification is ScrollStartNotification) {
+                        _unfocusAndHideKeyboard();
+                      }
+                      return false;
+                    },
+                    child: q.isEmpty
+                        ? _buildRecentSearchesView(cs)
+                        : !hasAnyResults
+                            ? AppEmptyState(
+                                icon: Icons.search_off_rounded,
+                                title: 'No results found',
+                                message:
+                                    'We couldn’t find any matches for "$_query". Check for typos or try searching by artist.',
+                              )
+                            : ListView(
+                                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                children: resultItems,
+                              ),
+                  ),
                 ),
               ],
             ),
@@ -849,8 +881,7 @@ class _AppSearchViewState extends State<AppSearchView> {
                 TextPosition(offset: item.length),
               );
               setState(() => _query = item);
-              _focusNode.unfocus();
-              FocusScope.of(context).unfocus();
+              _unfocusAndHideKeyboard();
             },
           ),
       ],

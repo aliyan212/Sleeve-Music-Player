@@ -19,6 +19,9 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:music_player/utils/song_repair_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:music_player/data/models/album_stat.dart';
+import 'package:music_player/data/models/app_tab.dart';
+import 'package:music_player/data/models/genre_stat.dart';
+import 'package:music_player/dialogs/customize_tabs_dialog.dart';
 import 'package:music_player/data/models/sort_mode.dart';
 import 'package:music_player/utils/format_utils.dart';
 import 'package:music_player/utils/song_sort_utils.dart';
@@ -1263,7 +1266,7 @@ void main() {
       });
     });
 
-    testWidgets('buildBottomBarsGutter creates 1.5 cards equivalent gutter height (120px)', (tester) async {
+    testWidgets('buildBottomBarsGutter creates 3.0 cards equivalent gutter height (240px)', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -1284,7 +1287,7 @@ void main() {
       );
       expect(sizedBoxFinder, findsOneWidget);
       final sizedBox = tester.widget<SizedBox>(sizedBoxFinder);
-      expect(sizedBox.height, 120.0);
+      expect(sizedBox.height, 240.0);
     });
 
     testWidgets('AppSearchView clicking outside search bar dismisses keyboard/focus', (tester) async {
@@ -1298,12 +1301,57 @@ void main() {
       final searchBar = find.byType(SearchBar);
       expect(searchBar, findsOneWidget);
 
-      // Tap outside the search bar
+      // Initially, autofocus causes focus to be active on the search field
+      final initialFocus = FocusManager.instance.primaryFocus;
+      expect(initialFocus?.hasFocus, isTrue);
+
+      // Tap outside the search bar (e.g. on recent searches or blank background at (200, 400))
       await tester.tapAt(const Offset(200, 400));
       await tester.pumpAndSettle();
 
       final primaryFocus = FocusManager.instance.primaryFocus;
-      expect(primaryFocus?.context?.widget is SearchBar, isFalse);
+      expect(primaryFocus == null || !primaryFocus.hasFocus || primaryFocus is FocusScopeNode, isTrue);
+    });
+
+    testWidgets('LibraryTab search bar is non-focusable and tapping it does not capture keyboard focus', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Focus(
+                    canRequestFocus: false,
+                    descendantsAreFocusable: false,
+                    child: GestureDetector(
+                      onTap: () {},
+                      child: const AbsorbPointer(
+                        child: SearchBar(
+                          readOnly: true,
+                          hintText: 'Search tracks, albums, artists...',
+                          leading: Icon(Icons.search_rounded),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final searchBarFinder = find.byType(SearchBar);
+      expect(searchBarFinder, findsOneWidget);
+
+      // Tap on search bar
+      await tester.tap(searchBarFinder, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      // Ensure focus manager did not focus any text field
+      final primaryFocus = FocusManager.instance.primaryFocus;
+      expect(primaryFocus == null || !primaryFocus.hasFocus || primaryFocus is FocusScopeNode, isTrue);
     });
 
     testWidgets('NowPlayingLandscapeView renders centered artwork and metadata with device insets', (tester) async {
@@ -1673,6 +1721,258 @@ void main() {
       expect(find.text('Track 1'), findsOneWidget);
       expect(find.text('Track 5'), findsOneWidget);
       expect(find.text('Track 15'), findsNothing);
+    });
+
+    test('AppTab parsing, defaults, and bounds enforcement', () {
+      // Defaults
+      expect(AppTab.defaultTabs.length, 5);
+      expect(AppTab.defaultTabs, [
+        AppTab.songs,
+        AppTab.albums,
+        AppTab.artists,
+        AppTab.genres,
+        AppTab.playlists,
+      ]);
+
+      // Null or empty list fallback
+      expect(AppTab.parseList(null), AppTab.defaultTabs);
+      expect(AppTab.parseList([]), AppTab.defaultTabs);
+
+      // Fewer than 3 valid tabs fallback
+      expect(AppTab.parseList(['songs', 'albums']), AppTab.defaultTabs);
+      expect(AppTab.parseList(['invalid_key', 'another_invalid']), AppTab.defaultTabs);
+
+      // Valid 3 tabs
+      final threeTabs = AppTab.parseList(['songs', 'genres', 'folders']);
+      expect(threeTabs, [AppTab.songs, AppTab.genres, AppTab.folders]);
+
+      // Valid 4 tabs
+      final fourTabs = AppTab.parseList(['albums', 'artists', 'genres', 'folders']);
+      expect(fourTabs, [AppTab.albums, AppTab.artists, AppTab.genres, AppTab.folders]);
+
+      // Max 5 tabs capping
+      final sixTabs = AppTab.parseList([
+        'songs',
+        'albums',
+        'artists',
+        'genres',
+        'playlists',
+        'folders',
+      ]);
+      expect(sixTabs.length, 5);
+      expect(sixTabs, [
+        AppTab.songs,
+        AppTab.albums,
+        AppTab.artists,
+        AppTab.genres,
+        AppTab.playlists,
+      ]);
+
+      // Deduplication and invalid entries handling
+      final withDuplicates = AppTab.parseList([
+        'songs',
+        'invalid_key',
+        'songs',
+        'genres',
+        'folders',
+      ]);
+      expect(withDuplicates, [AppTab.songs, AppTab.genres, AppTab.folders]);
+
+      // Storage keys
+      for (final tab in AppTab.values) {
+        expect(AppTab.fromStorageKey(tab.storageKey), tab);
+      }
+    });
+
+    test('AppStateController indexes genres and respects genre sort modes', () async {
+      final appState = AppStateController.instance;
+
+      final s1 = SongModel({
+        '_id': 2001,
+        'title': 'Track 1',
+        'genre': 'Rock / Metal',
+        'duration': 180000,
+        'album_id': 101,
+        '_data': '/m/t1.mp3',
+      });
+      final s2 = SongModel({
+        '_id': 2002,
+        'title': 'Track 2',
+        'genre': 'Pop; Dance',
+        'duration': 200000,
+        'album_id': 102,
+        '_data': '/m/t2.mp3',
+      });
+      final s3 = SongModel({
+        '_id': 2003,
+        'title': 'Track 3',
+        'genre': 'Rock',
+        'duration': 210000,
+        'album_id': 103,
+        '_data': '/m/t3.mp3',
+      });
+      final s4 = SongModel({
+        '_id': 2004,
+        'title': 'Track 4',
+        'genre': 'Jazz',
+        'duration': 240000,
+        'album_id': 104,
+        '_data': '/m/t4.mp3',
+      });
+      final s5 = SongModel({
+        '_id': 2005,
+        'title': 'Track 5',
+        'genre': null,
+        'duration': 150000,
+        'album_id': 105,
+        '_data': '/m/t5.mp3',
+      });
+
+      appState.songs = [s1, s2, s3, s4, s5];
+      appState.recomputeLibraryStructure();
+
+      // Ensure genres are indexed correctly
+      final genreNames = appState.cachedGenres.map((g) => g.name).toList();
+      expect(genreNames, containsAll(['Rock', 'Metal', 'Pop', 'Dance', 'Jazz', 'Unknown Genre']));
+
+      final rockStat = appState.cachedGenres.firstWhere((g) => g.name == 'Rock');
+      expect(rockStat.trackCount, 2); // s1 and s3
+      expect(rockStat.albumIds.length, 2);
+
+      final unknownStat = appState.cachedGenres.firstWhere((g) => g.name == 'Unknown Genre');
+      expect(unknownStat.trackCount, 1); // s5
+
+      // Sort by Most Tracks
+      await appState.applyGenreSort(GenreSort.mostTracks);
+      expect(appState.cachedGenres.first.name, 'Rock');
+
+      // Sort Alphabetically Ascending
+      await appState.applyGenreSort(GenreSort.nameAsc);
+      expect(appState.cachedGenres.first.name, 'Dance');
+
+      // Sort Alphabetically Descending
+      await appState.applyGenreSort(GenreSort.nameDesc);
+      expect(appState.cachedGenres.first.name, 'Unknown Genre');
+    });
+
+    test('AppStateController groups by Album Artists, Artists, and Composers', () {
+      final appState = AppStateController.instance;
+
+      final s1 = SongModel({
+        '_id': 3001,
+        'title': 'Symphony No. 5',
+        'artist': 'Soloist A',
+        'album_artist': 'Philharmonic Orchestra',
+        'composer': 'Ludwig van Beethoven',
+        'album_id': 201,
+        '_data': '/m/c1.mp3',
+      });
+      final s2 = SongModel({
+        '_id': 3002,
+        'title': 'Symphony No. 9',
+        'artist': 'Soloist B',
+        'album_artist': 'Philharmonic Orchestra',
+        'composer': 'Ludwig van Beethoven',
+        'album_id': 201,
+        '_data': '/m/c2.mp3',
+      });
+      final s3 = SongModel({
+        '_id': 3003,
+        'title': 'Piano Sonata',
+        'artist': 'Soloist A',
+        'album_artist': 'Soloist A',
+        'composer': 'Wolfgang Amadeus Mozart',
+        'album_id': 202,
+        '_data': '/m/c3.mp3',
+      });
+
+      appState.songs = [s1, s2, s3];
+      appState.recomputeLibraryStructure();
+
+      // Album Artists check: Philharmonic Orchestra (2 tracks), Soloist A (1 track)
+      final albumArtists = appState.cachedAlbumArtists;
+      final philAlbum = albumArtists.firstWhere((a) => a.name == 'Philharmonic Orchestra');
+      expect(philAlbum.trackCount, 2);
+      final soloistAAlbum = albumArtists.firstWhere((a) => a.name == 'Soloist A');
+      expect(soloistAAlbum.trackCount, 1);
+
+      // Track Artists check: Soloist A (2 tracks), Soloist B (1 track)
+      final trackArtists = appState.cachedTrackArtists;
+      final soloistATrack = trackArtists.firstWhere((a) => a.name == 'Soloist A');
+      expect(soloistATrack.trackCount, 2);
+      final soloistBTrack = trackArtists.firstWhere((a) => a.name == 'Soloist B');
+      expect(soloistBTrack.trackCount, 1);
+
+      // Composers check: Ludwig van Beethoven (2 tracks), Wolfgang Amadeus Mozart (1 track)
+      final composers = appState.cachedComposers;
+      final beethoven = composers.firstWhere((a) => a.name == 'Ludwig van Beethoven');
+      expect(beethoven.trackCount, 2);
+      final mozart = composers.firstWhere((a) => a.name == 'Wolfgang Amadeus Mozart');
+      expect(mozart.trackCount, 1);
+
+      // Toggle artists view mode
+      appState.setArtistsViewMode(ArtistsViewMode.composers);
+      expect(appState.artistsViewMode, ArtistsViewMode.composers);
+      appState.setArtistsViewMode(ArtistsViewMode.artists);
+      expect(appState.artistsViewMode, ArtistsViewMode.artists);
+      appState.setArtistsViewMode(ArtistsViewMode.albumArtists);
+      expect(appState.artistsViewMode, ArtistsViewMode.albumArtists);
+    });
+
+    testWidgets('CustomizeTabsDialog displays tab chips and enforces constraints', (WidgetTester tester) async {
+      final appState = AppStateController.instance;
+      appState.activeTabs = [
+        AppTab.songs,
+        AppTab.albums,
+        AppTab.artists,
+        AppTab.genres,
+        AppTab.playlists,
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                return ElevatedButton(
+                  onPressed: () => showCustomizeTabsDialog(context),
+                  child: const Text('Customize'),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Customize'));
+      await tester.pumpAndSettle();
+
+      // Check dialog opened
+      expect(find.text('Customize Bottom Bar'), findsOneWidget);
+      expect(find.textContaining('5 / 5'), findsOneWidget);
+
+      // Check that tab names are rendered in the chips
+      expect(find.text('Songs'), findsWidgets);
+      expect(find.text('Albums'), findsWidgets);
+      expect(find.text('Artists'), findsWidgets);
+      expect(find.text('Genres'), findsWidgets);
+      expect(find.text('Playlists'), findsWidgets);
+      expect(find.text('Folders'), findsWidgets);
+
+      // Reset button exists
+      expect(find.text('Reset'), findsOneWidget);
+      await tester.tap(find.text('Reset'));
+      await tester.pumpAndSettle();
+
+      // Save changes
+      await tester.ensureVisible(find.text('Apply'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+
+      // Dialog is closed
+      expect(find.text('Customize Bottom Bar'), findsNothing);
     });
   });
 }

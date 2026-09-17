@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:music_player/data/models/album_stat.dart';
+import 'package:music_player/data/models/genre_stat.dart';
 import 'package:music_player/data/models/sort_mode.dart';
 
 /// Represents a single selectable sort option in [AppSortBottomSheet].
@@ -435,4 +436,64 @@ Future<void> showAlbumArtistsSortBottomSheet(
     ],
   );
 }
+
+/// Convenience bottom sheet for Genres sorting.
+Future<void> showGenresSortBottomSheet(
+  BuildContext context, {
+  required GenreSort currentSort,
+  required ValueChanged<GenreSort> onSortSelected,
+}) {
+  return showAppSortBottomSheet<GenreSort>(
+    context: context,
+    title: 'Sort Genres',
+    subtitle: 'Order genres in your collection',
+    currentSort: currentSort,
+    onSortSelected: onSortSelected,
+    options: const [
+      AppSortOption(
+        value: GenreSort.nameAsc,
+        title: 'Name',
+        subtitle: 'A → Z',
+        icon: Icons.sort_by_alpha_rounded,
+        sectionTitle: 'Name',
+      ),
+      AppSortOption(
+        value: GenreSort.nameDesc,
+        title: 'Name',
+        subtitle: 'Z → A',
+        icon: Icons.sort_by_alpha_rounded,
+        sectionTitle: 'Name',
+      ),
+      AppSortOption(
+        value: GenreSort.mostTracks,
+        title: 'Track Count',
+        subtitle: 'Most tracks first',
+        icon: Icons.music_note_rounded,
+        sectionTitle: 'Library',
+      ),
+      AppSortOption(
+        value: GenreSort.leastTracks,
+        title: 'Track Count',
+        subtitle: 'Least tracks first',
+        icon: Icons.music_note_outlined,
+        sectionTitle: 'Library',
+      ),
+      AppSortOption(
+        value: GenreSort.mostAlbums,
+        title: 'Album Count',
+        subtitle: 'Most albums first',
+        icon: Icons.album_rounded,
+        sectionTitle: 'Library',
+      ),
+      AppSortOption(
+        value: GenreSort.leastAlbums,
+        title: 'Album Count',
+        subtitle: 'Least albums first',
+        icon: Icons.album_outlined,
+        sectionTitle: 'Library',
+      ),
+    ],
+  );
+}
+
 

@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../android_notifications.dart';
 import '../data/models/album_stat.dart';
+import '../data/models/app_tab.dart';
+import '../data/models/genre_stat.dart';
 import '../data/models/isolate_data.dart';
 import '../data/models/sort_mode.dart';
 import '../dialogs/folder_management_dialog.dart';
@@ -65,12 +67,22 @@ class AppStateController extends ChangeNotifier
   static const String _albumsSortKey = "albums_sort_mode_v1";
   static const String _albumArtistsSortKey = "album_artists_sort_mode_v1";
   static const String _lockedDateAddedKey = "song_locked_date_added_v1";
+  static const String _activeTabsKey = "app_active_bottom_tabs_v2";
+  static const String _genresSortKey = "genres_sort_mode_v1";
+  static const String _artistsViewModeKey = "artists_view_mode_v1";
 
   final Map<String, int> _lockedDateAddedByPath = {};
   final Map<int, int> _lockedDateAddedById = {};
   bool _dateAddedPreferencesLoaded = false;
 
+  List<AppTab> activeTabs = List.of(AppTab.defaultTabs);
+  GenreSort genreSort = GenreSort.nameAsc;
+  ArtistsViewMode artistsViewMode = ArtistsViewMode.albumArtists;
+
   List<AlbumArtistStat> cachedAlbumArtists = <AlbumArtistStat>[];
+  List<AlbumArtistStat> cachedTrackArtists = <AlbumArtistStat>[];
+  List<AlbumArtistStat> cachedComposers = <AlbumArtistStat>[];
+  List<GenreStat> cachedGenres = <GenreStat>[];
   List<AlbumTabStat> cachedAlbums = <AlbumTabStat>[];
   List<SongModel> cachedMostPlayed = <SongModel>[];
   List<SongModel> cachedRecentlyPlayed = <SongModel>[];
@@ -91,57 +103,32 @@ class AppStateController extends ChangeNotifier
     return v.isEmpty ? 'Unknown Artist' : v;
   }
 
-  int _yearValueForCompare(int y) => y == 0 ? 99999 : y;
-
-  @override
-  void recomputeAllData() {
-    recomputeLibraryStructure();
-    recomputePlayHistoryStats();
+  String _displayComposerName(SongModel song) {
+    final raw = (song.composer ?? (song.getMap['composer'] as String?))?.trim();
+    return (raw == null || raw.isEmpty) ? 'Unknown Composer' : raw;
   }
 
-  void recomputeLibraryStructure() {
-    final songs = this.songs;
-    final byId = <int, SongModel>{for (final s in songs) s.id: s};
-
-    final artistStatByKey = <String, AlbumArtistStat>{};
-    final representativeByAlbumKey = <String, SongModel>{};
-    final trackCountByAlbumKey = <String, int>{};
-    final minYearByAlbumKey = <String, int>{};
-    final albumYearByKey = computeAlbumYearMap(songs);
-
-    for (final s in songs) {
-      final artistName = _displayArtistName(albumArtistFor(s));
-      final artistKey = artistName.toLowerCase();
-      final artistStat = artistStatByKey.putIfAbsent(
-        artistKey,
-        () => AlbumArtistStat(name: artistName, representativeSong: s),
-      );
-      artistStat.trackCount++;
-      if (artistStat.representativeSong == null ||
-          ((artistStat.representativeSong!.albumId ?? 0) <= 0 && (s.albumId ?? 0) > 0)) {
-        artistStat.representativeSong = s;
-      }
-
-      final albumKey = albumIdentityKey(s);
-      artistStat.albumIds.add(albumKey.hashCode);
-
-      final existingRep = representativeByAlbumKey[albumKey];
-      if (existingRep == null ||
-          ((existingRep.albumId ?? 0) <= 0 && (s.albumId ?? 0) > 0)) {
-        representativeByAlbumKey[albumKey] = s;
-      }
-      trackCountByAlbumKey.update(albumKey, (v) => v + 1, ifAbsent: () => 1);
-      final y = yearFromSong(s);
-      if (y > 0) {
-        final existing = minYearByAlbumKey[albumKey];
-        if (existing == null || y < existing) minYearByAlbumKey[albumKey] = y;
-      }
+  List<String> _extractGenres(SongModel song) {
+    final raw = song.genre?.trim();
+    if (raw == null || raw.isEmpty) {
+      return const ['Unknown Genre'];
     }
+    final parts = raw
+        .split(RegExp(r'[/;]'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    return parts.isEmpty ? const ['Unknown Genre'] : parts;
+  }
 
-    final artists = artistStatByKey.values.toList(growable: false)
+  List<AlbumArtistStat> _sortArtistStats(
+    List<AlbumArtistStat> list,
+    AlbumArtistsSort sort,
+  ) {
+    return list
       ..sort((a, b) {
         int comp;
-        switch (albumArtistsSort) {
+        switch (sort) {
           case AlbumArtistsSort.nameAsc:
             comp = compareSortStrings(a.name, b.name);
             break;
@@ -180,6 +167,166 @@ class AppStateController extends ChangeNotifier
         if (comp != 0) return comp;
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       });
+  }
+
+  List<GenreStat> _sortGenreStats(
+    List<GenreStat> list,
+    GenreSort sort,
+  ) {
+    return list
+      ..sort((a, b) {
+        int comp;
+        switch (sort) {
+          case GenreSort.nameAsc:
+            comp = compareSortStrings(a.name, b.name);
+            break;
+          case GenreSort.nameDesc:
+            comp = compareSortStrings(b.name, a.name);
+            break;
+          case GenreSort.mostTracks:
+            comp = b.trackCount.compareTo(a.trackCount);
+            if (comp != 0) break;
+            comp = b.albumCount.compareTo(a.albumCount);
+            if (comp != 0) break;
+            comp = compareSortStrings(a.name, b.name);
+            break;
+          case GenreSort.leastTracks:
+            comp = a.trackCount.compareTo(b.trackCount);
+            if (comp != 0) break;
+            comp = a.albumCount.compareTo(b.albumCount);
+            if (comp != 0) break;
+            comp = compareSortStrings(a.name, b.name);
+            break;
+          case GenreSort.mostAlbums:
+            comp = b.albumCount.compareTo(a.albumCount);
+            if (comp != 0) break;
+            comp = b.trackCount.compareTo(a.trackCount);
+            if (comp != 0) break;
+            comp = compareSortStrings(a.name, b.name);
+            break;
+          case GenreSort.leastAlbums:
+            comp = a.albumCount.compareTo(b.albumCount);
+            if (comp != 0) break;
+            comp = a.trackCount.compareTo(b.trackCount);
+            if (comp != 0) break;
+            comp = compareSortStrings(a.name, b.name);
+            break;
+        }
+        if (comp != 0) return comp;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+  }
+
+  int _yearValueForCompare(int y) => y == 0 ? 99999 : y;
+
+  @override
+  void recomputeAllData() {
+    recomputeLibraryStructure();
+    recomputePlayHistoryStats();
+  }
+
+  void recomputeLibraryStructure() {
+    final songs = this.songs;
+    final byId = <int, SongModel>{for (final s in songs) s.id: s};
+
+    final artistStatByKey = <String, AlbumArtistStat>{};
+    final trackArtistStatByKey = <String, AlbumArtistStat>{};
+    final composerStatByKey = <String, AlbumArtistStat>{};
+    final genreStatByKey = <String, GenreStat>{};
+
+    final representativeByAlbumKey = <String, SongModel>{};
+    final trackCountByAlbumKey = <String, int>{};
+    final minYearByAlbumKey = <String, int>{};
+    final albumYearByKey = computeAlbumYearMap(songs);
+
+    for (final s in songs) {
+      final albumKey = albumIdentityKey(s);
+
+      // 1. Album Artist
+      final artistName = _displayArtistName(albumArtistFor(s));
+      final artistKey = artistName.toLowerCase();
+      final artistStat = artistStatByKey.putIfAbsent(
+        artistKey,
+        () => AlbumArtistStat(name: artistName, representativeSong: s),
+      );
+      artistStat.trackCount++;
+      if (artistStat.representativeSong == null ||
+          ((artistStat.representativeSong!.albumId ?? 0) <= 0 && (s.albumId ?? 0) > 0)) {
+        artistStat.representativeSong = s;
+      }
+      artistStat.albumIds.add(albumKey.hashCode);
+
+      // 2. Track Artist
+      final trackArtistName = _displayArtistName(s.artist);
+      final trackArtistKey = trackArtistName.toLowerCase();
+      final trackArtistStat = trackArtistStatByKey.putIfAbsent(
+        trackArtistKey,
+        () => AlbumArtistStat(name: trackArtistName, representativeSong: s),
+      );
+      trackArtistStat.trackCount++;
+      if (trackArtistStat.representativeSong == null ||
+          ((trackArtistStat.representativeSong!.albumId ?? 0) <= 0 && (s.albumId ?? 0) > 0)) {
+        trackArtistStat.representativeSong = s;
+      }
+      trackArtistStat.albumIds.add(albumKey.hashCode);
+
+      // 3. Composer
+      final composerName = _displayComposerName(s);
+      final composerKey = composerName.toLowerCase();
+      final composerStat = composerStatByKey.putIfAbsent(
+        composerKey,
+        () => AlbumArtistStat(name: composerName, representativeSong: s),
+      );
+      composerStat.trackCount++;
+      if (composerStat.representativeSong == null ||
+          ((composerStat.representativeSong!.albumId ?? 0) <= 0 && (s.albumId ?? 0) > 0)) {
+        composerStat.representativeSong = s;
+      }
+      composerStat.albumIds.add(albumKey.hashCode);
+
+      // 4. Genres
+      final genres = _extractGenres(s);
+      for (final g in genres) {
+        final gKey = g.toLowerCase();
+        final genreStat = genreStatByKey.putIfAbsent(
+          gKey,
+          () => GenreStat(name: g, representativeSong: s),
+        );
+        genreStat.trackCount++;
+        genreStat.totalDurationMs += (s.duration ?? 0);
+        genreStat.albumIds.add(albumKey.hashCode);
+        if (genreStat.representativeSong == null ||
+            ((genreStat.representativeSong!.albumId ?? 0) <= 0 && (s.albumId ?? 0) > 0)) {
+          genreStat.representativeSong = s;
+        }
+        if (genreStat.representativeSongs.length < 4) {
+          final alreadyHasAlbum = genreStat.representativeSongs.any(
+            (rs) => (rs.albumId ?? 0) > 0 && rs.albumId == s.albumId,
+          );
+          if (!alreadyHasAlbum) {
+            genreStat.representativeSongs.add(s);
+          }
+        }
+      }
+
+      final existingRep = representativeByAlbumKey[albumKey];
+      if (existingRep == null ||
+          ((existingRep.albumId ?? 0) <= 0 && (s.albumId ?? 0) > 0)) {
+        representativeByAlbumKey[albumKey] = s;
+      }
+      trackCountByAlbumKey.update(albumKey, (v) => v + 1, ifAbsent: () => 1);
+      final y = yearFromSong(s);
+      if (y > 0) {
+        final existing = minYearByAlbumKey[albumKey];
+        if (existing == null || y < existing) minYearByAlbumKey[albumKey] = y;
+      }
+    }
+
+    final artists = _sortArtistStats(artistStatByKey.values.toList(growable: false), albumArtistsSort);
+    final trackArtists = _sortArtistStats(trackArtistStatByKey.values.toList(growable: false), albumArtistsSort);
+    final composers = _sortArtistStats(composerStatByKey.values.toList(growable: false), albumArtistsSort);
+    final genreList = _sortGenreStats(genreStatByKey.values.toList(growable: false), genreSort);
+
 
     final albums =
         representativeByAlbumKey.keys
@@ -288,10 +435,14 @@ class AppStateController extends ChangeNotifier
     }
 
     cachedAlbumArtists = artists;
+    cachedTrackArtists = trackArtists;
+    cachedComposers = composers;
+    cachedGenres = genreList;
     cachedAlbums = albums;
     cachedRecentlyAdded = recentlyAdded;
     cachedUserPlaylistTrackCounts = userPlaylistTrackCounts;
   }
+
 
   void recomputePlayHistoryStats() {
     final songs = this.songs;
@@ -469,7 +620,8 @@ class AppStateController extends ChangeNotifier
 
   int _dateAddedFromSong(SongModel s) {
     // 1. Check locked addition timestamp first so edits never alter it
-    final locked = _lockedDateAddedByPath[s.data] ?? _lockedDateAddedById[s.id];
+    final songPath = (s.getMap['_data'] ?? s.getMap['data'])?.toString();
+    final locked = (songPath != null ? _lockedDateAddedByPath[songPath] : null) ?? _lockedDateAddedById[s.id];
     if (locked != null && locked > 0) {
       return locked;
     }
@@ -878,8 +1030,50 @@ class AppStateController extends ChangeNotifier
           }
         }
       }
+
+      final genresSortName = prefs.getString(_genresSortKey);
+      if (genresSortName != null) {
+        for (final m in GenreSort.values) {
+          if (m.name == genresSortName) {
+            genreSort = m;
+            break;
+          }
+        }
+      }
+
+      final artistsModeName = prefs.getString(_artistsViewModeKey);
+      if (artistsModeName != null) {
+        for (final m in ArtistsViewMode.values) {
+          if (m.name == artistsModeName) {
+            artistsViewMode = m;
+            break;
+          }
+        }
+      }
+
+      final savedTabs = prefs.getStringList(_activeTabsKey);
+      if (savedTabs != null && savedTabs.isNotEmpty) {
+        activeTabs = AppTab.parseList(savedTabs);
+      }
     } catch (e) {
       debugPrint('Error loading saved sort preferences: $e');
+    }
+  }
+
+  Future<void> updateActiveTabs(List<AppTab> newTabs) async {
+    if (newTabs.length < 3 || newTabs.length > 5) return;
+    HapticFeedback.selectionClick();
+    activeTabs = List.of(newTabs);
+    await saveActiveTabsPreference(newTabs);
+    notifyListeners();
+  }
+
+  Future<void> saveActiveTabsPreference(List<AppTab> tabs) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_activeTabsKey, tabs.map((t) => t.storageKey).toList());
+    } catch (e) {
+      debugPrint('Error saving active tabs preference: $e');
     }
   }
 
@@ -910,10 +1104,43 @@ class AppStateController extends ChangeNotifier
     }
   }
 
+  Future<void> saveGenreSortPreference(GenreSort mode) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_genresSortKey, mode.name);
+    } catch (e) {
+      debugPrint('Error saving genre sort preference: $e');
+    }
+  }
+
+  Future<void> saveArtistsViewModePreference(ArtistsViewMode mode) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_artistsViewModeKey, mode.name);
+    } catch (e) {
+      debugPrint('Error saving artists view mode preference: $e');
+    }
+  }
+
+  Future<void> setArtistsViewMode(ArtistsViewMode mode) async {
+    HapticFeedback.selectionClick();
+    artistsViewMode = mode;
+    await saveArtistsViewModePreference(mode);
+    notifyListeners();
+  }
+
   Future<void> applyAlbumArtistsSort(AlbumArtistsSort mode) async {
     HapticFeedback.selectionClick();
     albumArtistsSort = mode;
     await saveAlbumArtistsSortPreference(mode);
+    recomputeAllData();
+    notifyListeners();
+  }
+
+  Future<void> applyGenreSort(GenreSort mode) async {
+    HapticFeedback.selectionClick();
+    genreSort = mode;
+    await saveGenreSortPreference(mode);
     recomputeAllData();
     notifyListeners();
   }
@@ -925,6 +1152,7 @@ class AppStateController extends ChangeNotifier
     recomputeAllData();
     notifyListeners();
   }
+
 
   Future<void> playQueueShuffled(BuildContext context) async {
     final queue = List<SongModel>.from(songs);

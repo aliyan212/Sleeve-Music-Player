@@ -342,13 +342,24 @@ class LibraryTab extends StatelessWidget {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: SearchBar(
-                    hintText: 'Search tracks, albums, artists...',
-                    leading: const Icon(Icons.search_rounded),
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      appState.openSearch(initialFilter: SearchFilter.all);
-                    },
+                  child: Focus(
+                    canRequestFocus: false,
+                    descendantsAreFocusable: false,
+                    child: GestureDetector(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        SystemChannels.textInput.invokeMethod('TextInput.hide');
+                        appState.openSearch(initialFilter: SearchFilter.all);
+                      },
+                      child: const AbsorbPointer(
+                        child: SearchBar(
+                          readOnly: true,
+                          hintText: 'Search tracks, albums, artists...',
+                          leading: Icon(Icons.search_rounded),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),

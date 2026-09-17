@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import '../../dialogs/customize_tabs_dialog.dart';
+import '../../services/app_state_controller.dart';
 import '../../services/playback_controller.dart';
 import '../../widgets/mini_player.dart';
 
@@ -18,9 +20,9 @@ Widget buildBottomBarsGutter(
   bool includeMiniPlayer = true,
   double extraPadding = 0,
 }) {
-  // Gutter space set to 1.5 cards height (standard card is 80px -> 120px total).
+  // Gutter space increased by 1.5 cards (from 1.5 cards to 3.0 cards height, standard card is 80px -> 240px total).
   const double cardHeight = 80.0;
-  const double gutterHeight = cardHeight * 1.5;
+  const double gutterHeight = cardHeight * 3.0;
   return SliverToBoxAdapter(
     child: SizedBox(height: gutterHeight + extraPadding),
   );
@@ -41,6 +43,12 @@ Widget buildDetailBottomBars({
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final bottomInset = MediaQuery.of(context).padding.bottom;
   final bottomMargin = bottomInset > 0 ? 4.0 : 10.0;
+
+  final activeTabs = AppStateController.instance.activeTabs;
+  final safeIndex = (selectedTabIndex >= 0 && selectedTabIndex < activeTabs.length)
+      ? selectedTabIndex
+      : 0;
+
   return Column(
     mainAxisSize: MainAxisSize.min,
     children: [
@@ -79,37 +87,23 @@ Widget buildDetailBottomBars({
                   ),
                   borderRadius: BorderRadius.circular(28),
                 ),
-                child: NavigationBar(
-                  elevation: 0,
-                  backgroundColor: Colors.transparent,
-                  selectedIndex: selectedTabIndex,
-                  onDestinationSelected: (index) {
-                    HapticFeedback.selectionClick();
-                    onNavigateTab(index);
-                    Navigator.of(context).popUntil((route) => route.isFirst);
-                  },
-                  destinations: const [
-                    NavigationDestination(
-                      icon: Icon(Icons.home_outlined),
-                      selectedIcon: Icon(Icons.home_rounded),
-                      label: 'Home',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.album_outlined),
-                      selectedIcon: Icon(Icons.album_rounded),
-                      label: 'Albums',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.people_outline_rounded),
-                      selectedIcon: Icon(Icons.people_rounded),
-                      label: 'Album Artists',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.queue_music_outlined),
-                      selectedIcon: Icon(Icons.queue_music_rounded),
-                      label: 'Playlists',
-                    ),
-                  ],
+                child: GestureDetector(
+                  onLongPress: () => showCustomizeTabsDialog(context),
+                  child: NavigationBar(
+                    elevation: 0,
+                    backgroundColor: Colors.transparent,
+                    selectedIndex: safeIndex,
+                    onDestinationSelected: (index) {
+                      HapticFeedback.selectionClick();
+                      onNavigateTab(index);
+                      Navigator.of(context).popUntil((route) => route.isFirst);
+                    },
+                    destinations: activeTabs.map((tab) => NavigationDestination(
+                      icon: Icon(tab.icon),
+                      selectedIcon: Icon(tab.selectedIcon),
+                      label: tab.label,
+                    )).toList(),
+                  ),
                 ),
               ),
             ),

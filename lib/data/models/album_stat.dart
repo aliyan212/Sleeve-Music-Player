@@ -68,3 +68,20 @@ enum AlbumsSort {
   mostTracks,
   leastTracks,
 }
+
+enum ArtistsViewMode {
+  albumArtists,
+  artists,
+  composers;
+
+  String get label {
+    switch (this) {
+      case ArtistsViewMode.albumArtists:
+        return 'Album Artists';
+      case ArtistsViewMode.artists:
+        return 'Artists';
+      case ArtistsViewMode.composers:
+        return 'Composers';
+    }
+  }
+}

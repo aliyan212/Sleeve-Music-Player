@@ -36,8 +36,6 @@ class SongInfoSheet extends StatefulWidget {
 }
 
 class _SongInfoSheetState extends State<SongInfoSheet> {
-  bool _isLoading = true;
-
   // Enriched tags
   String? _albumArtist;
   String? _composer;
@@ -143,7 +141,6 @@ class _SongInfoSheetState extends State<SongInfoSheet> {
         _fileSize = resolvedSize;
         _dateModified = resolvedModified;
         _dateAdded = resolvedAdded;
-        _isLoading = false;
       });
     }
   }

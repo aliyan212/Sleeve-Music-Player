@@ -792,6 +792,8 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                           icon: const Icon(Icons.arrow_back_rounded),
                           onPressed: () {
                             FocusScope.of(context).unfocus();
+                            FocusManager.instance.primaryFocus?.unfocus();
+                            SystemChannels.textInput.invokeMethod('TextInput.hide');
                             setState(() {
                               _isSearching = false;
                               _searchController.clear();
@@ -805,6 +807,8 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                               icon: const Icon(Icons.arrow_back_rounded),
                               onPressed: () {
                                 FocusScope.of(context).unfocus();
+                                FocusManager.instance.primaryFocus?.unfocus();
+                                SystemChannels.textInput.invokeMethod('TextInput.hide');
                                 widget.onClose?.call();
                               },
                             )
@@ -814,6 +818,8 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                                   icon: const Icon(Icons.arrow_back_rounded),
                                   onPressed: () {
                                     FocusScope.of(context).unfocus();
+                                    FocusManager.instance.primaryFocus?.unfocus();
+                                    SystemChannels.textInput.invokeMethod('TextInput.hide');
                                     Navigator.pop(context);
                                   },
                                 )
@@ -822,7 +828,11 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                       ? TextField(
                           controller: _searchController,
                           autofocus: true,
-                          onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                          onTapOutside: (_) {
+                            FocusScope.of(context).unfocus();
+                            FocusManager.instance.primaryFocus?.unfocus();
+                            SystemChannels.textInput.invokeMethod('TextInput.hide');
+                          },
                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                             color: cs.onSurface,
                           ),

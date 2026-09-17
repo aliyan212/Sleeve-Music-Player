@@ -7,9 +7,11 @@ import 'package:go_router/go_router.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
 import '../../data/models/album_stat.dart';
+import '../../data/models/genre_stat.dart';
 import '../../main.dart';
 import '../../pages/album_page.dart';
 import '../../pages/artist_page.dart';
+import '../../pages/genre_page.dart';
 import '../../pages/now_playing_page.dart';
 import '../../platform_exit.dart';
 import '../../utils/song_sort_utils.dart';
@@ -57,11 +59,15 @@ mixin NavigationStateMixin on ChangeNotifier {
 
   void closeInlineDetail() {
     if (inlineDetailContent == null) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
     inlineDetailContent = null;
     notifyListeners();
   }
 
   void openSearch({SearchFilter initialFilter = SearchFilter.all}) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
     if (inlineDetailContent != null) {
       inlineDetailContent = null;
     }
@@ -268,6 +274,8 @@ mixin NavigationStateMixin on ChangeNotifier {
     } finally {
       nowPlayingRouteActive = false;
       _lastNowPlayingClosedAt = DateTime.now();
+      FocusManager.instance.primaryFocus?.unfocus();
+      SystemChannels.textInput.invokeMethod('TextInput.hide');
     }
   }
 
@@ -495,4 +503,180 @@ mixin NavigationStateMixin on ChangeNotifier {
       showInlineDetail(artistPage);
     }
   }
+
+  void openComposerPageByName(BuildContext context, String composerName) {
+    final normalizedComposer = composerName.trim();
+    if (normalizedComposer.isEmpty) return;
+
+    String norm(String? v) => (v ?? '').trim().toLowerCase();
+    final target = norm(normalizedComposer);
+
+    final composerSongs = songs
+        .where((s) {
+          final c = norm(s.composer ?? (s.getMap['composer'] as String?));
+          return c == target;
+        })
+        .toList(growable: false);
+
+    if (composerSongs.isEmpty) return;
+
+    final Map<String, List<SongModel>> songsByAlbumKey = {};
+    for (final s in composerSongs) {
+      final key = albumIdentityKey(s);
+      (songsByAlbumKey[key] ??= <SongModel>[]).add(s);
+    }
+
+    final albums = <ArtistAlbum>[];
+    for (final entry in songsByAlbumKey.entries) {
+      final songs = entry.value;
+      songs.sort(compareDiscAndTrack);
+
+      final title = (songs.first.album ?? '').trim().isEmpty
+          ? 'Unknown Album'
+          : songs.first.album!.trim();
+      int year = 0;
+      for (final s in songs) {
+        final y = yearFromSong(s);
+        if (y > 0 && (year == 0 || y < year)) year = y;
+      }
+
+      int totalMs = 0;
+      for (final s in songs) {
+        totalMs += (s.duration ?? 0);
+      }
+
+      final repAlbumId = songs.first.albumId ?? 0;
+
+      albums.add(
+        ArtistAlbum(
+          albumId: repAlbumId,
+          title: title,
+          year: year,
+          trackCount: songs.length,
+          totalDurationMs: totalMs,
+          representativeSong: songs.first,
+        ),
+      );
+    }
+
+    albums.sort((a, b) {
+      final ay = a.year == 0 ? 9999 : a.year;
+      final by = b.year == 0 ? 9999 : b.year;
+      final yc = ay.compareTo(by);
+      if (yc != 0) return yc;
+      final tc = a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      if (tc != 0) return tc;
+      return a.albumId.compareTo(b.albumId);
+    });
+
+    final albumKeyForAlbum = <int, String>{};
+    for (final entry in songsByAlbumKey.entries) {
+      final repId = entry.value.first.albumId ?? 0;
+      albumKeyForAlbum[repId] = entry.key;
+    }
+
+    final isPushed = nowPlayingRouteActive || inlineDetailContent != null;
+
+    final artistPage = ArtistPage(
+      player: playbackController.player,
+      artistName: normalizedComposer,
+      albums: albums,
+      artistSongs: composerSongs,
+      librarySongs: songs,
+      onQueueChanged: (_) {},
+      selectedTabIndex: selectedTabIndex,
+      onNavigateTab: selectTab,
+      embeddedInHome: !isPushed,
+      onClose: () {
+        if (isPushed) {
+          if (context.mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+        } else {
+          closeInlineDetail();
+        }
+      },
+      onOpenNowPlaying: (s) {
+        if (nowPlayingRouteActive) {
+          if (context.mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+            return;
+          }
+        }
+        openNowPlaying(context, s);
+      },
+      onOpenAlbum: (s) => openAlbumPageFromSong(context, s),
+      onPlayAll: albums.isEmpty
+          ? null
+          : () async {
+              final queue = <SongModel>[];
+              for (final a in albums) {
+                final key = albumKeyForAlbum[a.albumId] ?? '';
+                final list = songsByAlbumKey[key] ?? const <SongModel>[];
+                final sorted = List<SongModel>.from(list);
+                sorted.sort(compareDiscAndTrack);
+                queue.addAll(sorted);
+              }
+              if (queue.isEmpty) return;
+              await playbackController.playFromQueue(queue, initialIndex: 0);
+            },
+      onShuffleAll: composerSongs.isEmpty
+          ? null
+          : () async {
+              final queue = List<SongModel>.from(composerSongs);
+              queue.shuffle();
+              await playbackController.playFromQueue(queue, initialIndex: 0);
+            },
+    );
+
+    if (isPushed) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => artistPage,
+        ),
+      );
+    } else {
+      showInlineDetail(artistPage);
+    }
+  }
+
+  void openGenrePage(BuildContext context, GenreStat genre) {
+    final isPushed = nowPlayingRouteActive || inlineDetailContent != null;
+
+    final genrePage = GenrePage(
+      genre: genre,
+      embeddedInHome: !isPushed,
+      onClose: () {
+        if (isPushed) {
+          if (context.mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+        } else {
+          closeInlineDetail();
+        }
+      },
+      onOpenNowPlaying: (s) {
+        if (nowPlayingRouteActive) {
+          if (context.mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+            return;
+          }
+        }
+        openNowPlaying(context, s);
+      },
+      onOpenAlbum: (s) => openAlbumPageFromSong(context, s),
+      onOpenArtist: (s) => openArtistPageFromSong(context, s),
+    );
+
+    if (isPushed) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => genrePage,
+        ),
+      );
+    } else {
+      showInlineDetail(genrePage);
+    }
+  }
 }
+

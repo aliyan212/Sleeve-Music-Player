@@ -7,8 +7,11 @@ import 'package:permission_handler/permission_handler.dart';
 import '../services/app_state_controller.dart';
 import '../services/playback_controller.dart';
 import '../ui/shared/bottom_bars_gutter.dart';
+import '../data/models/app_tab.dart';
 import 'tabs/album_artists_tab.dart';
 import 'tabs/albums_tab.dart';
+import 'tabs/folders_tab.dart';
+import 'tabs/genres_tab.dart';
 import 'tabs/library_tab.dart';
 import 'tabs/playlists_tab.dart';
 
@@ -54,9 +57,15 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _onAppStateChanged() {
     if (!mounted) return;
-    final currentTarget = _appState.selectedTabIndex;
+    final maxIndex = _appState.activeTabs.isEmpty ? 0 : _appState.activeTabs.length - 1;
+    final currentTarget = _appState.selectedTabIndex.clamp(0, maxIndex);
+    if (_appState.selectedTabIndex != currentTarget) {
+      _appState.selectedTabIndex = currentTarget;
+    }
     if (_lastRenderedTabIndex != currentTarget) {
       _lastRenderedTabIndex = currentTarget;
+      FocusManager.instance.primaryFocus?.unfocus();
+      SystemChannels.textInput.invokeMethod('TextInput.hide');
       if (_pageController.hasClients && _pageController.page?.round() != currentTarget) {
         _pageController.animateToPage(
           currentTarget,
@@ -66,6 +75,44 @@ class _MyHomePageState extends State<MyHomePage> {
       }
     }
     setState(() {});
+  }
+
+  Widget _buildTabChild(AppTab tab) {
+    switch (tab) {
+      case AppTab.songs:
+        return _KeepAlivePage(
+          key: const PageStorageKey<String>('tab_library'),
+          child: LibraryTab(
+            scrollController: _scrollController,
+            showSearchInAppBar: _showSearchInAppBar,
+          ),
+        );
+      case AppTab.albums:
+        return const _KeepAlivePage(
+          key: PageStorageKey<String>('tab_albums'),
+          child: AlbumsTab(),
+        );
+      case AppTab.artists:
+        return const _KeepAlivePage(
+          key: PageStorageKey<String>('tab_artists'),
+          child: AlbumArtistsTab(),
+        );
+      case AppTab.genres:
+        return const _KeepAlivePage(
+          key: PageStorageKey<String>('tab_genres'),
+          child: GenresTab(),
+        );
+      case AppTab.playlists:
+        return const _KeepAlivePage(
+          key: PageStorageKey<String>('tab_playlists'),
+          child: PlaylistsTab(),
+        );
+      case AppTab.folders:
+        return const _KeepAlivePage(
+          key: PageStorageKey<String>('tab_folders'),
+          child: FoldersTab(),
+        );
+    }
   }
 
   void _handleScroll() {
@@ -107,11 +154,15 @@ class _MyHomePageState extends State<MyHomePage> {
         if (didPop) return;
         if (_appState.isSelectionMode) {
           HapticFeedback.selectionClick();
+          FocusManager.instance.primaryFocus?.unfocus();
+          SystemChannels.textInput.invokeMethod('TextInput.hide');
           _appState.exitSelectionMode();
           return;
         }
         if (_appState.inlineDetailContent != null) {
           HapticFeedback.selectionClick();
+          FocusManager.instance.primaryFocus?.unfocus();
+          SystemChannels.textInput.invokeMethod('TextInput.hide');
           _appState.closeInlineDetail();
         }
       },
@@ -138,6 +189,10 @@ class _MyHomePageState extends State<MyHomePage> {
                       child: Listener(
                         onPointerDown: (e) {
                           _pointerDownPos = e.position;
+                          if (FocusManager.instance.primaryFocus?.hasFocus ?? false) {
+                            FocusManager.instance.primaryFocus?.unfocus();
+                            SystemChannels.textInput.invokeMethod('TextInput.hide');
+                          }
                         },
                         onPointerMove: (e) {
                           if (_pointerDownPos != null && !_isVerticalDragActive.value) {
@@ -188,31 +243,13 @@ class _MyHomePageState extends State<MyHomePage> {
                                     : const PageScrollPhysics(),
                                 onPageChanged: (index) {
                                   _lastRenderedTabIndex = index;
+                                  FocusManager.instance.primaryFocus?.unfocus();
+                                  SystemChannels.textInput.invokeMethod('TextInput.hide');
                                   if (_appState.selectedTabIndex != index) {
                                     _appState.selectTab(index);
                                   }
                                 },
-                                children: [
-                                  _KeepAlivePage(
-                                    key: const PageStorageKey<String>('tab_library'),
-                                    child: LibraryTab(
-                                      scrollController: _scrollController,
-                                      showSearchInAppBar: _showSearchInAppBar,
-                                    ),
-                                  ),
-                                  const _KeepAlivePage(
-                                    key: PageStorageKey<String>('tab_albums'),
-                                    child: AlbumsTab(),
-                                  ),
-                                  const _KeepAlivePage(
-                                    key: PageStorageKey<String>('tab_artists'),
-                                    child: AlbumArtistsTab(),
-                                  ),
-                                  const _KeepAlivePage(
-                                    key: PageStorageKey<String>('tab_playlists'),
-                                    child: PlaylistsTab(),
-                                  ),
-                                ],
+                                children: _appState.activeTabs.map(_buildTabChild).toList(),
                               );
                             },
                           ),
