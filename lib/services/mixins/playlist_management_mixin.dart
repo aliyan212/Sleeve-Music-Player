@@ -9,10 +9,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/models/user_playlist.dart';
 import '../../dialogs/playlist_dialogs.dart';
-import '../../main.dart';
 import '../../pages/playlist_page.dart';
 import '../app_local_store.dart';
 import '../playback_controller.dart';
+import '../loved_songs_service.dart';
 
 /// Mixin handling user playlists, creation, deletion, renaming,
 /// M3U importing, track additions, and playlist page routing.
@@ -20,14 +20,13 @@ mixin PlaylistManagementMixin on ChangeNotifier {
   // Dependencies satisfied by AppStateController or NavigationStateMixin:
   List<SongModel> get songs;
   void recomputeAllData();
-  void showSnackBar(SnackBar snackBar, {BuildContext? context});
   void showInlineDetail(Widget detailContent);
   void closeInlineDetail();
   int get selectedTabIndex;
   void selectTab(int index);
   bool get nowPlayingRouteActive;
   Widget? get inlineDetailContent;
-  Future<void> openNowPlaying(SongModel song);
+  Future<void> openNowPlaying(BuildContext context, SongModel song);
 
   static const String _userPlaylistsKey = 'user_playlists_v1';
   final AppLocalStore _localStore = AppLocalStore.instance;
@@ -35,7 +34,74 @@ mixin PlaylistManagementMixin on ChangeNotifier {
   List<UserPlaylist> userPlaylists = <UserPlaylist>[];
   Map<String, int> cachedUserPlaylistTrackCounts = <String, int>{};
 
-  BuildContext get context => navigatorKey.currentContext!;
+  UserPlaylist? get likedSongsPlaylist {
+    final idx = userPlaylists.indexWhere(
+      (p) => p.id == UserPlaylist.likedSongsPlaylistId,
+    );
+    return idx != -1 ? userPlaylists[idx] : null;
+  }
+
+  List<UserPlaylist> get customUserPlaylists {
+    return userPlaylists
+        .where((p) => p.id != UserPlaylist.likedSongsPlaylistId)
+        .toList();
+  }
+
+  Future<void> _ensureLikedSongsPlaylist() async {
+    final lovedService = LovedSongsService.instance;
+    final lovedIds = lovedService.lovedIds;
+    final idx = userPlaylists.indexWhere(
+      (p) =>
+          p.id == UserPlaylist.likedSongsPlaylistId ||
+          p.name == UserPlaylist.likedSongsPlaylistName,
+    );
+
+    if (idx == -1) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final likedPlaylist = UserPlaylist(
+        id: UserPlaylist.likedSongsPlaylistId,
+        name: UserPlaylist.likedSongsPlaylistName,
+        songIds: lovedIds.toList(),
+        createdAtMs: now,
+        updatedAtMs: now,
+      );
+      userPlaylists.insert(0, likedPlaylist);
+      cachedUserPlaylistTrackCounts[likedPlaylist.id] = likedPlaylist.songIds.length;
+      await saveUserPlaylists();
+    } else {
+      var likedPlaylist = userPlaylists[idx];
+      if (likedPlaylist.id != UserPlaylist.likedSongsPlaylistId ||
+          likedPlaylist.name != UserPlaylist.likedSongsPlaylistName) {
+        likedPlaylist = likedPlaylist.copyWith(
+          id: UserPlaylist.likedSongsPlaylistId,
+          name: UserPlaylist.likedSongsPlaylistName,
+        );
+      }
+      final mergedIds = <int>[];
+      final seen = <int>{};
+      for (final id in [...likedPlaylist.songIds, ...lovedIds]) {
+        if (seen.add(id)) mergedIds.add(id);
+      }
+
+      if (mergedIds.length != likedPlaylist.songIds.length ||
+          mergedIds.length != lovedIds.length) {
+        likedPlaylist = likedPlaylist.copyWith(
+          songIds: mergedIds,
+          updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+        );
+        await lovedService.syncFromSongIds(mergedIds);
+      }
+
+      if (idx != 0) {
+        userPlaylists.removeAt(idx);
+        userPlaylists.insert(0, likedPlaylist);
+      } else {
+        userPlaylists[0] = likedPlaylist;
+      }
+      cachedUserPlaylistTrackCounts[likedPlaylist.id] = likedPlaylist.songIds.length;
+      await saveUserPlaylists();
+    }
+  }
 
   Future<void> loadUserPlaylists() async {
     try {
@@ -58,27 +124,64 @@ mixin PlaylistManagementMixin on ChangeNotifier {
         }
       }
 
-      if (decoded == null) {
-        userPlaylists = <UserPlaylist>[];
-        recomputeAllData();
-        notifyListeners();
-        return;
-      }
-
       final list = <UserPlaylist>[];
-      for (final item in decoded) {
-        final pl = UserPlaylist.fromJson(item);
-        if (pl == null) continue;
-        list.add(pl);
+      if (decoded != null) {
+        for (final item in decoded) {
+          final pl = UserPlaylist.fromJson(item);
+          if (pl == null) continue;
+          list.add(pl);
+        }
       }
       userPlaylists = list;
+      await _ensureLikedSongsPlaylist();
       recomputeAllData();
       notifyListeners();
     } catch (_) {
       userPlaylists = <UserPlaylist>[];
+      await _ensureLikedSongsPlaylist();
       recomputeAllData();
       notifyListeners();
     }
+  }
+
+  Future<bool> toggleLikedSong(int songId) async {
+    final lovedService = LovedSongsService.instance;
+    final isNowLoved = await lovedService.toggleLoved(songId);
+
+    var idx = userPlaylists.indexWhere(
+      (p) => p.id == UserPlaylist.likedSongsPlaylistId,
+    );
+
+    if (idx == -1) {
+      await _ensureLikedSongsPlaylist();
+      idx = userPlaylists.indexWhere(
+        (p) => p.id == UserPlaylist.likedSongsPlaylistId,
+      );
+    }
+
+    if (idx != -1) {
+      final existing = userPlaylists[idx];
+      final ids = List<int>.from(existing.songIds);
+      if (isNowLoved) {
+        if (!ids.contains(songId)) {
+          ids.add(songId);
+        }
+      } else {
+        ids.remove(songId);
+      }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      userPlaylists = List<UserPlaylist>.from(userPlaylists)
+        ..[idx] = existing.copyWith(
+          songIds: ids,
+          updatedAtMs: now,
+        );
+      cachedUserPlaylistTrackCounts[UserPlaylist.likedSongsPlaylistId] = ids.length;
+      recomputeAllData();
+      notifyListeners();
+      await saveUserPlaylists();
+    }
+
+    return isNowLoved;
   }
 
   Future<void> saveUserPlaylists() async {
@@ -103,7 +206,13 @@ mixin PlaylistManagementMixin on ChangeNotifier {
       createdAtMs: now,
       updatedAtMs: now,
     );
-    userPlaylists = <UserPlaylist>[playlist, ...userPlaylists];
+    final liked = likedSongsPlaylist;
+    final customs = customUserPlaylists;
+    userPlaylists = <UserPlaylist>[
+      ?liked,
+      playlist,
+      ...customs,
+    ];
     cachedUserPlaylistTrackCounts[playlist.id] = initialSongIds.length;
     recomputeAllData();
     notifyListeners();
@@ -112,6 +221,7 @@ mixin PlaylistManagementMixin on ChangeNotifier {
   }
 
   Future<void> renamePlaylist(UserPlaylist playlist, String newName) async {
+    if (playlist.id == UserPlaylist.likedSongsPlaylistId) return;
     final idx = userPlaylists.indexWhere((p) => p.id == playlist.id);
     if (idx == -1) return;
     userPlaylists[idx] = playlist.copyWith(
@@ -124,6 +234,7 @@ mixin PlaylistManagementMixin on ChangeNotifier {
   }
 
   Future<void> deletePlaylist(UserPlaylist playlist) async {
+    if (playlist.id == UserPlaylist.likedSongsPlaylistId) return;
     userPlaylists.removeWhere((p) => p.id == playlist.id);
     cachedUserPlaylistTrackCounts.remove(playlist.id);
     recomputeAllData();
@@ -180,7 +291,7 @@ mixin PlaylistManagementMixin on ChangeNotifier {
     return '${now}_$rand';
   }
 
-  Future<void> importM3uPlaylistFlow() async {
+  Future<void> importM3uPlaylistFlow(BuildContext context) async {
     try {
       final picked = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -192,12 +303,14 @@ mixin PlaylistManagementMixin on ChangeNotifier {
       final f = picked.files.single;
       final bytes = f.bytes;
       if (bytes == null || bytes.isEmpty) {
-        showSnackBar(
-          const SnackBar(
-            content: Text('Could not read playlist file'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not read playlist file'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
         return;
       }
 
@@ -212,12 +325,14 @@ mixin PlaylistManagementMixin on ChangeNotifier {
       }
 
       if (entries.isEmpty) {
-        showSnackBar(
-          const SnackBar(
-            content: Text('No tracks found in .m3u'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No tracks found in .m3u'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
         return;
       }
 
@@ -270,14 +385,16 @@ mixin PlaylistManagementMixin on ChangeNotifier {
       }
 
       if (songIds.isEmpty) {
-        showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Could not match any tracks from the .m3u to your library',
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Could not match any tracks from the .m3u to your library',
+              ),
+              behavior: SnackBarBehavior.floating,
             ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+          );
+        }
         return;
       }
 
@@ -300,28 +417,34 @@ mixin PlaylistManagementMixin on ChangeNotifier {
       notifyListeners();
       await saveUserPlaylists();
 
-      showSnackBar(
-        SnackBar(
-          content: Text(
-            'Imported ${songIds.length} track${songIds.length == 1 ? '' : 's'} to "$playlistName"',
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Imported ${songIds.length} track${songIds.length == 1 ? '' : 's'} to "$playlistName"',
+            ),
+            behavior: SnackBarBehavior.floating,
           ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+        );
+      }
 
       // Open the imported playlist.
-      openUserPlaylistPage(playlist);
+      if (context.mounted) {
+        openUserPlaylistPage(context, playlist);
+      }
     } catch (_) {
-      showSnackBar(
-        const SnackBar(
-          content: Text('Failed to import playlist'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to import playlist'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
-  void openUserPlaylistPage(UserPlaylist playlist) {
+  void openUserPlaylistPage(BuildContext context, UserPlaylist playlist) {
     final playlistId = playlist.id;
     final isPushed = nowPlayingRouteActive || inlineDetailContent != null;
 
@@ -337,9 +460,8 @@ mixin PlaylistManagementMixin on ChangeNotifier {
       embeddedInHome: !isPushed,
       onClose: () {
         if (isPushed) {
-          final nav = navigatorKey.currentState;
-          if (nav != null && nav.canPop()) {
-            nav.pop();
+          if (context.mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
           }
         } else {
           closeInlineDetail();
@@ -347,13 +469,12 @@ mixin PlaylistManagementMixin on ChangeNotifier {
       },
       onOpenNowPlaying: (s) {
         if (nowPlayingRouteActive) {
-          final nav = navigatorKey.currentState;
-          if (nav != null && nav.canPop()) {
-            nav.pop();
+          if (context.mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
             return;
           }
         }
-        openNowPlaying(s);
+        openNowPlaying(context, s);
       },
       playFromQueue: (songs, initialIndex) async {
         await playbackController.playFromQueue(songs, initialIndex: initialIndex);
@@ -366,6 +487,10 @@ mixin PlaylistManagementMixin on ChangeNotifier {
         userPlaylists = List<UserPlaylist>.from(
           userPlaylists,
         )..[idx] = existing.copyWith(songIds: newSongIds, updatedAtMs: now);
+        cachedUserPlaylistTrackCounts[id] = newSongIds.length;
+        if (id == UserPlaylist.likedSongsPlaylistId) {
+          await LovedSongsService.instance.syncFromSongIds(newSongIds);
+        }
         recomputeAllData();
         notifyListeners();
         await saveUserPlaylists();
@@ -373,7 +498,7 @@ mixin PlaylistManagementMixin on ChangeNotifier {
     );
 
     if (isPushed) {
-      navigatorKey.currentState?.push(
+      Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => page,
         ),
@@ -397,7 +522,26 @@ mixin PlaylistManagementMixin on ChangeNotifier {
     unawaited(saveUserPlaylists());
   }
 
-  Future<UserPlaylist?> pickPlaylistOrCreate({
+  void reorderCustomUserPlaylists(int oldIndex, int newIndex) {
+    final customs = customUserPlaylists;
+    if (oldIndex < 0 || oldIndex >= customs.length) return;
+    if (newIndex < 0 || newIndex > customs.length) return;
+
+    if (newIndex > oldIndex) newIndex -= 1;
+    final moved = customs.removeAt(oldIndex);
+    customs.insert(newIndex, moved);
+
+    final liked = likedSongsPlaylist;
+    userPlaylists = [
+      ?liked,
+      ...customs,
+    ];
+    recomputeAllData();
+    notifyListeners();
+    unawaited(saveUserPlaylists());
+  }
+
+  Future<UserPlaylist?> pickPlaylistOrCreate(BuildContext context, {
     required List<int> songIdsToAdd,
   }) async {
     final pickedId = await showModalBottomSheet<String>(
@@ -447,7 +591,14 @@ mixin PlaylistManagementMixin on ChangeNotifier {
                 else
                   ...userPlaylists.map(
                     (p) => ListTile(
-                      leading: const Icon(Icons.playlist_play_rounded),
+                      leading: Icon(
+                        p.id == UserPlaylist.likedSongsPlaylistId
+                            ? Icons.favorite_rounded
+                            : Icons.playlist_play_rounded,
+                        color: p.id == UserPlaylist.likedSongsPlaylistId
+                            ? Colors.redAccent
+                            : null,
+                      ),
                       title: Text(
                         p.name,
                         maxLines: 1,
@@ -466,10 +617,9 @@ mixin PlaylistManagementMixin on ChangeNotifier {
 
     if (pickedId == null) return null;
     if (pickedId == '__new__') {
-      final ctx = navigatorKey.currentContext;
-      if (ctx == null || !ctx.mounted) return null;
+      if (!context.mounted) return null;
       return promptCreatePlaylist(
-        ctx,
+        context,
         onPlaylistCreated: createNewPlaylist,
       );
     }
@@ -479,9 +629,9 @@ mixin PlaylistManagementMixin on ChangeNotifier {
     return null;
   }
 
-  Future<bool> addSongsToPlaylistFlow(List<int> songIds) async {
+  Future<bool> addSongsToPlaylistFlow(BuildContext context, List<int> songIds) async {
     if (songIds.isEmpty) return false;
-    final playlist = await pickPlaylistOrCreate(songIdsToAdd: songIds);
+    final playlist = await pickPlaylistOrCreate(context, songIdsToAdd: songIds);
     if (playlist == null) return false;
 
     final idx = userPlaylists.indexWhere((p) => p.id == playlist.id);
@@ -499,12 +649,14 @@ mixin PlaylistManagementMixin on ChangeNotifier {
     }
 
     if (addedCount == 0) {
-      showSnackBar(
-        SnackBar(
-          content: Text('All selected songs are already in "${existing.name}"'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('All selected songs are already in "${existing.name}"'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
       return false;
     }
 
@@ -512,18 +664,24 @@ mixin PlaylistManagementMixin on ChangeNotifier {
     final newPlaylist = existing.copyWith(songIds: updated, updatedAtMs: now);
     userPlaylists = List<UserPlaylist>.from(userPlaylists)
       ..[idx] = newPlaylist;
+    cachedUserPlaylistTrackCounts[newPlaylist.id] = updated.length;
+    if (newPlaylist.id == UserPlaylist.likedSongsPlaylistId) {
+      await LovedSongsService.instance.syncFromSongIds(updated);
+    }
     recomputeAllData();
     notifyListeners();
     await saveUserPlaylists();
 
-    showSnackBar(
-      SnackBar(
-        content: Text(
-          'Added $addedCount song${addedCount == 1 ? '' : 's'} to "${newPlaylist.name}"',
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Added $addedCount song${addedCount == 1 ? '' : 's'} to "${newPlaylist.name}"',
+          ),
+          behavior: SnackBarBehavior.floating,
         ),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+      );
+    }
     return true;
   }
 }

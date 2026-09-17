@@ -36,7 +36,6 @@ mixin NavigationStateMixin on ChangeNotifier {
   bool isSelectionMode = false;
   final Set<int> selectedSongIds = <int>{};
 
-  BuildContext get context => navigatorKey.currentContext!;
 
   void selectTab(int index) {
     if (selectedTabIndex != index) {
@@ -172,11 +171,11 @@ mixin NavigationStateMixin on ChangeNotifier {
     return true;
   }
 
-  void openAboutPage() {
+  void openAboutPage(BuildContext context) {
     context.pushNamed('about');
   }
 
-  Future<void> confirmQuit() async {
+  Future<void> confirmQuit(BuildContext context) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cs = Theme.of(context).colorScheme;
 
@@ -209,7 +208,7 @@ mixin NavigationStateMixin on ChangeNotifier {
     }
   }
 
-  Future<void> openNowPlaying(SongModel song) async {
+  Future<void> openNowPlaying(BuildContext context, SongModel song) async {
     if (nowPlayingRouteActive) return;
     final lastClosed = _lastNowPlayingClosedAt;
     if (lastClosed != null &&
@@ -228,13 +227,13 @@ mixin NavigationStateMixin on ChangeNotifier {
           barrierLabel: 'Now Playing',
           transitionDuration: const Duration(milliseconds: 360),
           reverseTransitionDuration: const Duration(milliseconds: 300),
-          pageBuilder: (_, _, _) => NowPlayingPage(
+          pageBuilder: (context, _, _) => NowPlayingPage(
             player: playbackController.player,
             song: song,
             songs: songs,
             onQueueChanged: (_) {},
-            onOpenAlbum: openAlbumPageFromSong,
-            onOpenArtist: openArtistPageFromSong,
+            onOpenAlbum: (s) => openAlbumPageFromSong(context, s),
+            onOpenArtist: (s) => openArtistPageFromSong(context, s),
             onSongUpdated: updateSongMetadataInPlace,
           ),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -272,7 +271,7 @@ mixin NavigationStateMixin on ChangeNotifier {
     }
   }
 
-  void openAlbumPageFromSong(SongModel song) {
+  void openAlbumPageFromSong(BuildContext context, SongModel song) {
     final albumId = song.albumId;
     if (albumId == null || albumId <= 0) return;
 
@@ -309,9 +308,8 @@ mixin NavigationStateMixin on ChangeNotifier {
       embeddedInHome: !isPushed,
       onClose: () {
         if (isPushed) {
-          final nav = navigatorKey.currentState;
-          if (nav != null && nav.canPop()) {
-            nav.pop();
+          if (context.mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
           }
         } else {
           closeInlineDetail();
@@ -319,13 +317,12 @@ mixin NavigationStateMixin on ChangeNotifier {
       },
       onOpenNowPlaying: (s) {
         if (nowPlayingRouteActive) {
-          final nav = navigatorKey.currentState;
-          if (nav != null && nav.canPop()) {
-            nav.pop();
+          if (context.mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
             return;
           }
         }
-        openNowPlaying(s);
+        openNowPlaying(context, s);
       },
       onPlaySong: (s) async {
         final albumIndex = albumSongs.indexWhere((x) => x.id == s.id);
@@ -340,7 +337,7 @@ mixin NavigationStateMixin on ChangeNotifier {
     );
 
     if (isPushed) {
-      navigatorKey.currentState?.push(
+      Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => albumPage,
         ),
@@ -350,14 +347,14 @@ mixin NavigationStateMixin on ChangeNotifier {
     }
   }
 
-  void openArtistPageFromSong(SongModel song) {
+  void openArtistPageFromSong(BuildContext context, SongModel song) {
     final name = (song.artist ?? '').trim().isEmpty
         ? 'Unknown Artist'
         : song.artist!.trim();
-    openArtistPageByName(name);
+    openArtistPageByName(context, name);
   }
 
-  void openArtistPageByName(String artistName) {
+  void openArtistPageByName(BuildContext context, String artistName) {
     final normalizedArtist = artistName.trim();
     if (normalizedArtist.isEmpty) return;
 
@@ -448,9 +445,8 @@ mixin NavigationStateMixin on ChangeNotifier {
       embeddedInHome: !isPushed,
       onClose: () {
         if (isPushed) {
-          final nav = navigatorKey.currentState;
-          if (nav != null && nav.canPop()) {
-            nav.pop();
+          if (context.mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
           }
         } else {
           closeInlineDetail();
@@ -458,15 +454,14 @@ mixin NavigationStateMixin on ChangeNotifier {
       },
       onOpenNowPlaying: (s) {
         if (nowPlayingRouteActive) {
-          final nav = navigatorKey.currentState;
-          if (nav != null && nav.canPop()) {
-            nav.pop();
+          if (context.mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
             return;
           }
         }
-        openNowPlaying(s);
+        openNowPlaying(context, s);
       },
-      onOpenAlbum: (s) => openAlbumPageFromSong(s),
+      onOpenAlbum: (s) => openAlbumPageFromSong(context, s),
       onPlayAll: albums.isEmpty
           ? null
           : () async {
@@ -491,7 +486,7 @@ mixin NavigationStateMixin on ChangeNotifier {
     );
 
     if (isPushed) {
-      navigatorKey.currentState?.push(
+      Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => artistPage,
         ),

@@ -90,7 +90,7 @@ class _MyHomePageState extends State<MyHomePage> {
           songs: _appState.songs,
           currentIndex: playbackController.currentIndex,
           onQueueChanged: (_) {},
-          onOpenNowPlaying: (song) => _appState.openNowPlaying(song),
+          onOpenNowPlaying: (song) => _appState.openNowPlaying(context, song),
           selectedTabIndex: _appState.selectedTabIndex,
           onNavigateTab: _appState.selectTab,
           enableHero: true,

@@ -14,6 +14,7 @@ import '../../ui/shared/alphabetical_bubble_scroller.dart';
 import '../../ui/shared/app_empty_state.dart';
 import '../../utils/song_sort_utils.dart';
 import '../../widgets/search/app_search_view.dart';
+import '../../ui/shared/app_sort_bottom_sheet.dart';
 
 enum AppMenuAction { selectTracks, refresh, manageFolders, toggleTheme, about, quit }
 
@@ -165,7 +166,7 @@ class LibraryTab extends StatelessWidget {
                             final ids = selectedSongIds.toList(
                               growable: false,
                             );
-                            final didAdd = await appState.addSongsToPlaylistFlow(ids);
+                            final didAdd = await appState.addSongsToPlaylistFlow(context, ids);
                             if (didAdd) appState.exitSelectionMode();
                           },
                     icon: const Icon(Icons.playlist_add_rounded),
@@ -245,41 +246,18 @@ class LibraryTab extends StatelessWidget {
                       );
                     },
                   ),
-                  PopupMenuButton<SortMode>(
+                  IconButton(
                     icon: const Icon(Icons.sort_rounded),
-                    initialValue: controller.sortMode,
                     tooltip: 'Sort library',
-                    onSelected: (mode) {
-                      HapticFeedback.selectionClick();
-                      appState.applySort(mode);
+                    onPressed: () {
+                      showSongSortBottomSheet(
+                        context,
+                        currentSort: controller.sortMode,
+                        onSortSelected: (mode) {
+                          appState.applySort(mode);
+                        },
+                      );
                     },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: SortMode.artist,
-                        child: menuLabel(
-                          Icons.person_rounded,
-                          'Sort by Artist',
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: SortMode.albumArtist,
-                        child: menuLabel(
-                          Icons.person_outline_rounded,
-                          'Sort by Album Artist',
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: SortMode.year,
-                        child: menuLabel(Icons.event_rounded, 'Sort by Year'),
-                      ),
-                      PopupMenuItem(
-                        value: SortMode.albumArtistYear,
-                        child: menuLabel(
-                          Icons.calendar_view_month_rounded,
-                          'Sort by Album Artist / Year',
-                        ),
-                      ),
-                    ],
                   ),
                   PopupMenuButton<AppMenuAction>(
                     icon: const Icon(Icons.more_vert),
@@ -293,16 +271,16 @@ class LibraryTab extends StatelessWidget {
                           appState.ensureLibraryPermissionAndLoad();
                           break;
                         case AppMenuAction.manageFolders:
-                          appState.openManageFoldersDialog();
+                          appState.openManageFoldersDialog(context);
                           break;
                         case AppMenuAction.toggleTheme:
                           themeNotifier.toggle();
                           break;
                         case AppMenuAction.about:
-                          appState.openAboutPage();
+                          appState.openAboutPage(context);
                           break;
                         case AppMenuAction.quit:
-                          appState.confirmQuit();
+                          appState.confirmQuit(context);
                           break;
                       }
                     },
@@ -472,7 +450,7 @@ class LibraryTab extends StatelessWidget {
                                             await controller.player.pause();
                                           } else {
                                              await appState
-                                                 .checkNotificationPermission();
+                                                 .checkNotificationPermission(context);
                                              unawaited(controller.player.play());
                                            }
                                            return;
@@ -519,7 +497,7 @@ class LibraryTab extends StatelessWidget {
                                   if (isSelectionMode) {
                                     appState.toggleSelectedSongId(song.id);
                                   } else {
-                                    appState.showSongOptions(song, index);
+                                    appState.showSongOptions(context, song,  index);
                                   }
                                 },
                               );

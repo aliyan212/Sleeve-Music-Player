@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui' show lerpDouble;
+import '../../services/loved_songs_service.dart';
+
 import '../../pages/playlist_page.dart';
 import '../../services/app_state_controller.dart';
 import '../../data/models/user_playlist.dart';
@@ -16,14 +18,15 @@ class PlaylistsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = AppStateController.instance;
     return ListenableBuilder(
-      listenable: appState,
+      listenable: Listenable.merge([appState, LovedSongsService.instance]),
       builder: (context, _) {
         final controller = playbackController;
     final cachedMostPlayed = appState.cachedMostPlayed;
     final cachedRecentlyPlayed = appState.cachedRecentlyPlayed;
     final cachedRecentlyAdded = appState.cachedRecentlyAdded;
     final songs = appState.songs;
-    final userPlaylists = appState.userPlaylists;
+    final likedPlaylist = appState.likedSongsPlaylist;
+    final customPlaylists = appState.customUserPlaylists;
     final cachedUserPlaylistTrackCounts = appState.cachedUserPlaylistTrackCounts;
     final selectedTabIndex = appState.selectedTabIndex;
     final nowPlayingRouteActive = appState.nowPlayingRouteActive;
@@ -34,6 +37,9 @@ class PlaylistsTab extends StatelessWidget {
     final mostPlayedList = cachedMostPlayed;
     final recentlyPlayedList = cachedRecentlyPlayed;
     final recentlyAddedList = cachedRecentlyAdded;
+
+    final lovedIds = LovedSongsService.instance.lovedIds;
+    final lovedSongsList = songs.where((s) => lovedIds.contains(s.id)).toList();
 
     void open(SmartPlaylistKind kind) {
       final (title, description, icon, list) = switch (kind) {
@@ -55,6 +61,12 @@ class PlaylistsTab extends StatelessWidget {
           Icons.new_releases_rounded,
           recentlyAddedList,
         ),
+        SmartPlaylistKind.lovedSongs => (
+          'Loved Songs',
+          'Songs you have liked',
+          Icons.favorite_rounded,
+          lovedSongsList,
+        ),
       };
 
       appState.showInlineDetail(
@@ -64,6 +76,7 @@ class PlaylistsTab extends StatelessWidget {
           description: description,
           icon: icon,
           songs: list,
+          kind: kind,
           librarySongs: songs,
           onQueueChanged: (_) {},
           selectedTabIndex: selectedTabIndex,
@@ -75,7 +88,7 @@ class PlaylistsTab extends StatelessWidget {
               Navigator.of(context).pop();
               return;
             }
-            appState.openNowPlaying(s);
+            appState.openNowPlaying(context, s);
           },
           onPlayAll: list.isEmpty
               ? null
@@ -95,6 +108,8 @@ class PlaylistsTab extends StatelessWidget {
       required String title,
       required String subtitle,
       required IconData icon,
+      Color? iconColor,
+      Color? iconBgColor,
       required VoidCallback onTap,
       VoidCallback? onLongPress,
       Widget? trailing,
@@ -128,10 +143,10 @@ class PlaylistsTab extends StatelessWidget {
                       width: 48,
                       height: 48,
                       decoration: BoxDecoration(
-                        color: cs.surfaceContainerHighest,
+                        color: iconBgColor ?? cs.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: Icon(icon, color: cs.onSurfaceVariant),
+                      child: Icon(icon, color: iconColor ?? cs.onSurfaceVariant),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -283,9 +298,10 @@ class PlaylistsTab extends StatelessWidget {
                             context,
                             onPlaylistCreated: appState.createNewPlaylist,
                           );
-                          if (pl != null) appState.openUserPlaylistPage(pl);
+                          if (!context.mounted) return;
+                          if (pl != null) appState.openUserPlaylistPage(context, pl);
                         },
-                        onImportPlaylist: appState.importM3uPlaylistFlow,
+                        onImportPlaylist: () => appState.importM3uPlaylistFlow(context),
                       );
                     },
                     icon: const Icon(Icons.add_rounded),
@@ -294,7 +310,23 @@ class PlaylistsTab extends StatelessWidget {
               ),
             ),
           ),
-          if (userPlaylists.isEmpty)
+          if (likedPlaylist != null)
+            SliverToBoxAdapter(
+              child: playlistCard(
+                title: likedPlaylist.name,
+                subtitle: likedPlaylist.songIds.isEmpty
+                    ? 'No liked songs yet — tap the heart on any song'
+                    : '${likedPlaylist.songIds.length} track${likedPlaylist.songIds.length == 1 ? '' : 's'}',
+                icon: Icons.favorite_rounded,
+                iconColor: Colors.redAccent,
+                iconBgColor: Colors.redAccent.withValues(alpha: 0.15),
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  appState.openUserPlaylistPage(context, likedPlaylist);
+                },
+              ),
+            ),
+          if (customPlaylists.isEmpty)
             SliverToBoxAdapter(
               child: AppEmptyState(
                 padding: const EdgeInsets.symmetric(
@@ -312,7 +344,8 @@ class PlaylistsTab extends StatelessWidget {
                     context,
                     onPlaylistCreated: appState.createNewPlaylist,
                   );
-                  if (pl != null) appState.openUserPlaylistPage(pl);
+                  if (!context.mounted) return;
+                  if (pl != null) appState.openUserPlaylistPage(context, pl);
                 },
               ),
             )
@@ -371,32 +404,32 @@ class PlaylistsTab extends StatelessWidget {
                       );
                     },
                 onReorderStart: (_) => HapticFeedback.mediumImpact(),
-                onReorder: appState.reorderUserPlaylists,
+                onReorder: appState.reorderCustomUserPlaylists,
                 children: [
-                  for (var i = 0; i < userPlaylists.length; i++)
+                  for (var i = 0; i < customPlaylists.length; i++)
                     KeyedSubtree(
-                      key: ValueKey(userPlaylists[i].id),
+                      key: ValueKey(customPlaylists[i].id),
                       child: playlistCard(
-                        title: userPlaylists[i].name,
+                        title: customPlaylists[i].name,
                         subtitle:
-                            '${cachedUserPlaylistTrackCounts[userPlaylists[i].id] ?? 0} tracks',
+                            '${cachedUserPlaylistTrackCounts[customPlaylists[i].id] ?? 0} tracks',
                         icon: Icons.playlist_play_rounded,
                         onLongPress: () {
                           HapticFeedback.mediumImpact();
                           showUserPlaylistActionsSheet(
                             context,
-                            userPlaylists[i],
+                            customPlaylists[i],
                             onRenameClicked: () => promptRenamePlaylist(
                               context,
-                              userPlaylists[i],
+                              customPlaylists[i],
                               onPlaylistRenamed: (name) =>
-                                  appState.renamePlaylist(userPlaylists[i], name),
+                                  appState.renamePlaylist(customPlaylists[i], name),
                             ),
                             onDeleteClicked: () => confirmAndDeletePlaylist(
                               context,
-                              userPlaylists[i],
+                              customPlaylists[i],
                               onPlaylistDeleted: () =>
-                                  appState.deletePlaylist(userPlaylists[i]),
+                                  appState.deletePlaylist(customPlaylists[i]),
                             ),
                           );
                         },
@@ -425,7 +458,7 @@ class PlaylistsTab extends StatelessWidget {
                         ),
                         onTap: () {
                           HapticFeedback.selectionClick();
-                          appState.openUserPlaylistPage(userPlaylists[i]);
+                          appState.openUserPlaylistPage(context, customPlaylists[i]);
                         },
                       ),
                     ),

@@ -1,12 +1,17 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '../widgets/now_playing/now_playing_header.dart';
+import '../widgets/now_playing/now_playing_artwork_carousel.dart';
+import '../widgets/now_playing_lyrics_view.dart';
+
 import 'package:flutter/services.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audiotags/audiotags.dart';
-import 'dart:math' as math;
 import 'package:audio_service/audio_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -15,15 +20,11 @@ import '../utils/palette_compute.dart';
 import '../ui/shared/fast_artwork_widget.dart';
 import '../ui/shared/squiggly_seek_bar.dart';
 import '../widgets/now_playing_transport.dart';
-import '../dialogs/lyrics_editor_dialog.dart';
-import '../dialogs/tag_editor_dialog.dart';
-import '../pages/queue_page.dart';
 import '../utils/lyrics.dart';
-import '../utils/tag_write_access.dart';
 import '../utils/format_utils.dart';
 import '../main.dart';
-import '../ui/shared/snappy_artwork_scroll_physics.dart';
-import '../widgets/lyrics/synced_lyrics_view.dart';
+import '../services/loved_songs_service.dart';
+import '../services/app_state_controller.dart';
 import '../widgets/now_playing/now_playing_mesh_background.dart';
 import '../widgets/now_playing/now_playing_landscape_view.dart';
 
@@ -491,27 +492,6 @@ class _NowPlayingPageState extends State<NowPlayingPage>
     }
   }
 
-  Widget _buildNowPlayingArtwork({required double side}) {
-    if (_displayedArtworkBytes != null) {
-      return Image.memory(
-        _displayedArtworkBytes!,
-        width: side,
-        height: side,
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
-        filterQuality: FilterQuality.medium,
-      );
-    }
-    return Container(
-      width: side,
-      height: side,
-      decoration: BoxDecoration(
-        color: Colors.white10,
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: const Icon(Icons.music_note, size: 100, color: Colors.white38),
-    );
-  }
 
   void _queueOrApplyPalette({
     required int songId,
@@ -950,11 +930,32 @@ class _NowPlayingPageState extends State<NowPlayingPage>
       onToggleControls: () => setState(
         () => _fullscreenControlsVisible = !_fullscreenControlsVisible,
       ),
-      artworkPageViewBuilder: (side) => _buildArtworkPageView(
-        side: side,
-        isFullscreen: true,
-      ),
-      lyricsView: _buildLyricsView(),
+      artworkPageViewBuilder: (side) => NowPlayingArtworkCarousel(
+                                        player: widget.player,
+                                        isFullscreen: true,
+                                        sequence: widget.player.sequence,
+                                        effectiveIndices: _getEffectiveIndices(),
+                                        pageController: _fullscreenPageController,
+                                        isProgrammaticPageChange: _isProgrammaticPageChange,
+                                        onUserSwipedToPage: (p) => _userSwipedToPage = p,
+                                        displayedSong: _displayedSong,
+                                        artworkPulseController: _artworkPulseController,
+                                        primaryColor: _primaryColor,
+                                        alignment: Alignment.center,
+                                      ),
+      lyricsView: NowPlayingLyricsView(
+                                        rawLyrics: _rawLyrics,
+                                        isSynced: _isSynced,
+                                        lrcLines: _lrcLines,
+                                        activeLyricIndex: _activeLyricIndex,
+                                        itemScrollController: _lyricItemScrollController,
+                                        itemPositionsListener: _lyricItemPositionsListener,
+                                        displayedArtworkBytes: _displayedArtworkBytes,
+                                        currentLyricIndex: _currentLyricIndex,
+                                        player: widget.player,
+                                        onPauseAutoScroll: _pauseAutoScroll,
+                                        alignmentForLine: _alignmentForLine,
+                                      ),
       onOpenArtist: _openArtistDetail,
       onOpenAlbum: _openAlbumDetail,
     );
@@ -1055,240 +1056,31 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                               ).viewPadding.top
                             : 42.0), // Safe fallback for S10+ and similar devices
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      IconButton.filledTonal(
-                        icon: const Icon(Icons.keyboard_arrow_down),
-                        onPressed: () => Navigator.pop(context),
-                        style: IconButton.styleFrom(
-                          backgroundColor: iconBgColor,
-                          foregroundColor: iconFgColor,
-                        ),
-                      ),
-                      Text(
-                        "Now Playing",
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: textColorSecondary,
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (!_fullscreenLandscape) ...[
-                            IconButton.filledTonal(
-                              icon: const Icon(Icons.queue_music_rounded),
-                              onPressed: () => Navigator.push(
-                                context,
-                                PageRouteBuilder(
-                                  opaque: false,
-                                  pageBuilder: (_, _, _) => QueuePage(
-                                    player: widget.player,
-                                    songs: widget.songs,
-                                    currentIndex:
-                                        widget.player.currentIndex ?? 0,
-                                    onPlayIndex: (index) => widget.player.seek(
-                                      Duration.zero,
-                                      index: index,
-                                    ),
-                                    onQueueChanged:
-                                        widget.onQueueChanged ?? (_) {},
-                                  ),
-                                  transitionsBuilder:
-                                      (
-                                        context,
-                                        animation,
-                                        secondaryAnimation,
-                                        child,
-                                      ) {
-                                        return SlideTransition(
-                                          position:
-                                              Tween(
-                                                    begin: const Offset(
-                                                      0.0,
-                                                      1.0,
-                                                    ),
-                                                    end: Offset.zero,
-                                                  )
-                                                  .chain(
-                                                    CurveTween(
-                                                      curve:
-                                                          Curves.easeOutCubic,
-                                                    ),
-                                                  )
-                                                  .animate(animation),
-                                          child: child,
-                                        );
-                                      },
-                                ),
-                              ),
-                              style: IconButton.styleFrom(
-                                backgroundColor: iconBgColor,
-                                foregroundColor: iconFgColor,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            IconButton.filledTonal(
-                              icon: Icon(
-                                _showLyrics
-                                    ? Icons.image_rounded
-                                    : Icons.lyrics_rounded,
-                              ),
-                              onPressed: () => _setLyricsVisible(!_showLyrics),
-                              style: IconButton.styleFrom(
-                                backgroundColor: iconBgColor,
-                                foregroundColor: iconFgColor,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                          ],
-                          PopupMenuButton<String>(
-                            icon: Icon(
-                              Icons.more_vert_rounded,
-                              color: textColorSecondary,
-                            ),
-                            tooltip: 'More actions',
-                            color: cs.surface,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            onSelected: (value) async {
-                              HapticFeedback.selectionClick();
-                              if (value == 'fullscreen_toggle') {
-                                await _setFullscreenLandscape(
-                                  !_fullscreenLandscape,
-                                );
-                              } else if (value == 'edit_tags') {
-                                final result = await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => TagEditorDialog(
-                                    song: _displayedSong,
-                                    onSaved: _reloadDisplayedSongMetadata,
-                                    onSongUpdated: (updatedSong) {
-                                      setState(() {
-                                        _displayedSong = updatedSong;
-                                      });
-                                      widget.onSongUpdated?.call(updatedSong);
-                                    },
-                                    runWithPlaybackSuspended: (action) =>
-                                        runWithPlayerPlaybackSuspended(
-                                          widget.player,
-                                          widget.player.audioSource,
-                                          action,
-                                          targetFilePath: _displayedSong.data,
-                                        ),
-                                  ),
-                                );
-                                if (result == true) {
-                                  _reloadDisplayedSongMetadata();
-                                }
-                              } else if (value == 'edit_lyrics') {
-                                final result = await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => LyricsEditorDialog(
-                                    song: _displayedSong,
-                                    currentLyrics: _rawLyrics,
-                                    onSaved: () => _loadLyrics(),
-                                    onLyricsSaved: (lyrics) {
-                                      _loadLyrics();
-                                    },
-                                    runWithPlaybackSuspended: (action) =>
-                                        runWithPlayerPlaybackSuspended(
-                                          widget.player,
-                                          widget.player.audioSource,
-                                          action,
-                                          targetFilePath: _displayedSong.data,
-                                        ),
-                                  ),
-                                );
-                                if (result == true) {
-                                  _loadLyrics();
-                                }
-                              }
-                            },
-                            itemBuilder: (context) {
-                              final menuTextColor = isDark
-                                  ? Colors.white
-                                  : Colors.black87;
-                              final menuIconColor = isDark
-                                  ? Colors.white70
-                                  : Colors.black54;
-                              final fullscreenLabel = _fullscreenLandscape
-                                  ? 'Exit fullscreen'
-                                  : 'Fullscreen';
-                              final fullscreenIcon = _fullscreenLandscape
-                                  ? Icons.fullscreen_exit_rounded
-                                  : Icons.fullscreen_rounded;
-                              return [
-                                PopupMenuItem(
-                                  value: 'fullscreen_toggle',
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        fullscreenIcon,
-                                        size: 20,
-                                        color: menuIconColor,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Text(
-                                        fullscreenLabel,
-                                        style: TextStyle(color: menuTextColor),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (!_fullscreenLandscape) ...[
-                                  PopupMenuItem(
-                                    value: 'edit_tags',
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.edit_rounded,
-                                          size: 20,
-                                          color: menuIconColor,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Text(
-                                          'Edit Tags',
-                                          style: TextStyle(
-                                            color: menuTextColor,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'edit_lyrics',
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.lyrics_rounded,
-                                          size: 20,
-                                          color: menuIconColor,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Text(
-                                          'Edit Lyrics',
-                                          style: TextStyle(
-                                            color: menuTextColor,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ];
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                NowPlayingHeader(
+                  player: widget.player,
+                  songs: widget.songs,
+                  displayedSong: _displayedSong,
+                  rawLyrics: _rawLyrics,
+                  isFullscreenLandscape: _fullscreenLandscape,
+                  showLyrics: _showLyrics,
+                  isDark: isDark,
+                  textColorSecondary: textColorSecondary,
+                  iconBgColor: iconBgColor,
+                  iconFgColor: iconFgColor,
+                  onPop: () => Navigator.pop(context),
+                  onQueueChanged: widget.onQueueChanged,
+                  onSetLyricsVisible: _setLyricsVisible,
+                  onSetFullscreenLandscape: (val) async {
+                    await _setFullscreenLandscape(val);
+                  },
+                  onSongUpdated: (updatedSong) {
+                    setState(() {
+                      _displayedSong = updatedSong;
+                    });
+                    widget.onSongUpdated?.call(updatedSong);
+                  },
+                  onReloadDisplayedSongMetadata: _reloadDisplayedSongMetadata,
+                  onLoadLyrics: _loadLyrics,
                 ),
                 Expanded(
                   child: _fullscreenLandscape
@@ -1310,8 +1102,32 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                 child: AnimatedSwitcher(
                                   duration: const Duration(milliseconds: 400),
                                   child: _showLyrics
-                                      ? _buildLyricsView()
-                                      : _buildArtworkView(),
+                                      ? NowPlayingLyricsView(
+                                        rawLyrics: _rawLyrics,
+                                        isSynced: _isSynced,
+                                        lrcLines: _lrcLines,
+                                        activeLyricIndex: _activeLyricIndex,
+                                        itemScrollController: _lyricItemScrollController,
+                                        itemPositionsListener: _lyricItemPositionsListener,
+                                        displayedArtworkBytes: _displayedArtworkBytes,
+                                        currentLyricIndex: _currentLyricIndex,
+                                        player: widget.player,
+                                        onPauseAutoScroll: _pauseAutoScroll,
+                                        alignmentForLine: _alignmentForLine,
+                                      )
+                                      : NowPlayingArtworkCarousel(
+                                        player: widget.player,
+                                        isFullscreen: false,
+                                        sequence: widget.player.sequence,
+                                        effectiveIndices: _getEffectiveIndices(),
+                                        pageController: _portraitPageController,
+                                        isProgrammaticPageChange: _isProgrammaticPageChange,
+                                        onUserSwipedToPage: (p) => _userSwipedToPage = p,
+                                        displayedSong: _displayedSong,
+                                        artworkPulseController: _artworkPulseController,
+                                        primaryColor: _primaryColor,
+                                        alignment: Alignment.center,
+                                      ),
                                 ),
                               );
                             }
@@ -1326,9 +1142,9 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                         .textTheme
                                         .headlineSmall
                                         ?.copyWith(
-                                          fontWeight: FontWeight.w800,
+                                          fontWeight: FontWeight.w900,
                                           color: textColor,
-                                          letterSpacing: -0.5,
+                                          letterSpacing: -0.8,
                                           fontSize: titleSize,
                                         ),
                                     textAlign: TextAlign.center,
@@ -1350,14 +1166,15 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                             color: textColor.withValues(
                                               alpha: 0.8,
                                             ),
-                                            fontWeight: FontWeight.w500,
+                                            fontWeight: FontWeight.w600,
+                                            letterSpacing: -0.3,
                                           ),
                                       textAlign: TextAlign.center,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
+                                  const SizedBox(height: 4),
                                   GestureDetector(
                                     onTap: () {
                                       HapticFeedback.selectionClick();
@@ -1370,7 +1187,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                           .bodyMedium
                                           ?.copyWith(
                                             color: textColorSecondary,
-                                            fontWeight: FontWeight.w400,
+                                            fontWeight: FontWeight.w500,
                                           ),
                                       textAlign: TextAlign.center,
                                       maxLines: 1,
@@ -1503,6 +1320,55 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                               );
                             }
 
+                            Widget songMetaWithActions({double titleSize = 22}) {
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  ListenableBuilder(
+                                    listenable: LovedSongsService.instance,
+                                    builder: (context, _) {
+                                      final isLoved = LovedSongsService.instance.isLoved(_displayedSong.id);
+                                      return IconButton.filledTonal(
+                                        tooltip: isLoved ? 'Remove from loved' : 'Love song',
+                                        icon: Icon(
+                                          isLoved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                          color: isLoved ? Colors.redAccent : iconFgColor,
+                                          size: 22,
+                                        ),
+                                        onPressed: () {
+                                          HapticFeedback.selectionClick();
+                                          AppStateController.instance.toggleLikedSong(_displayedSong.id);
+                                        },
+                                        style: IconButton.styleFrom(
+                                          backgroundColor: isLoved
+                                              ? Colors.redAccent.withValues(alpha: 0.15)
+                                              : iconBgColor,
+                                          foregroundColor: isLoved ? Colors.redAccent : iconFgColor,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: songMeta(titleSize: titleSize),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  IconButton.filledTonal(
+                                    tooltip: 'Add to playlist',
+                                    icon: const Icon(Icons.playlist_add_rounded, size: 24),
+                                    onPressed: () {
+                                      HapticFeedback.selectionClick();
+                                      AppStateController.instance.addSongsToPlaylistFlow(context, [_displayedSong.id]);
+                                    },
+                                    style: IconButton.styleFrom(
+                                      backgroundColor: iconBgColor,
+                                      foregroundColor: iconFgColor,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+
                             if (!isLandscape) {
                               return Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -1512,11 +1378,11 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Expanded(child: artworkOrLyrics()),
-                                    const SizedBox(height: 32),
-                                    songMeta(titleSize: 22),
                                     const SizedBox(height: 28),
-                                    seekAndTime(),
+                                    songMetaWithActions(titleSize: 22),
                                     const SizedBox(height: 24),
+                                    seekAndTime(),
+                                    const SizedBox(height: 20),
                                     NowPlayingTransport(
                                       player: widget.player,
                                       isDark: isDark,
@@ -1547,15 +1413,21 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                         widget.player.play();
                                       },
                                     ),
-                                    const SizedBox(height: 40),
+                                    const SizedBox(height: 36),
                                   ],
                                 ),
                               );
                             }
 
                             // Landscape: use two columns and allow the right side to scroll if needed.
+                            final mediaPadding = MediaQuery.paddingOf(context);
                             return Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                              padding: EdgeInsets.fromLTRB(
+                                math.max(16.0, mediaPadding.left),
+                                4,
+                                math.max(16.0, mediaPadding.right),
+                                math.max(12.0, mediaPadding.bottom),
+                              ),
                               child: Row(
                                 children: [
                                   Expanded(
@@ -1571,7 +1443,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           const SizedBox(height: 8),
-                                          songMeta(titleSize: 20),
+                                          songMetaWithActions(titleSize: 20),
                                           const SizedBox(height: 16),
                                           seekAndTime(),
                                           const SizedBox(height: 14),
@@ -1625,184 +1497,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
     );
   }
 
-  Widget _buildArtworkPageView({
-    required double side,
-    required bool isFullscreen,
-  }) {
-    final sequence = widget.player.sequence;
-    if (sequence.isEmpty) {
-      return _buildNowPlayingArtwork(side: side);
-    }
 
-    final effective = _getEffectiveIndices();
-    final itemCount = effective.length;
-    final currentSeqIndex = widget.player.currentIndex ?? 0;
-    final targetPage = _pageForSequenceIndex(currentSeqIndex, effective);
 
-    PageController controller =
-        isFullscreen ? _fullscreenPageController : _portraitPageController;
-
-    if (!controller.hasClients && controller.initialPage != targetPage) {
-      controller.dispose();
-      controller = PageController(
-        initialPage: targetPage,
-        keepPage: false,
-      );
-      if (isFullscreen) {
-        _fullscreenPageController = controller;
-      } else {
-        _portraitPageController = controller;
-      }
-    }
-
-    return PageView.builder(
-      controller: controller,
-      physics: SnappyArtworkScrollPhysics(itemCount: itemCount),
-      itemCount: itemCount,
-      onPageChanged: (page) {
-        if (_isProgrammaticPageChange) return;
-        if (page < 0 || page >= effective.length) return;
-        _userSwipedToPage = page;
-        final targetSeqIndex = effective[page];
-        if (targetSeqIndex != widget.player.currentIndex) {
-          widget.player.seek(Duration.zero, index: targetSeqIndex);
-        }
-      },
-      itemBuilder: (context, page) {
-        if (page < 0 || page >= effective.length) {
-          return _buildNowPlayingArtwork(side: side);
-        }
-        final seqIndex = effective[page];
-        if (seqIndex < 0 || seqIndex >= sequence.length) {
-          return _buildNowPlayingArtwork(side: side);
-        }
-        final currentSource = sequence[seqIndex];
-        final tag = currentSource.tag;
-
-        int? songId;
-        if (tag is MediaItem) {
-          songId = int.tryParse(tag.id);
-        } else if (tag is SongModel) {
-          songId = tag.id;
-        }
-
-        if (songId == null) {
-          return _buildNowPlayingArtwork(side: side);
-        }
-
-        final artworkWidget = FastArtworkWidget(
-          id: songId,
-          type: ArtworkType.AUDIO,
-          size: 900,
-          quality: 100,
-          width: side,
-          height: side,
-          keepOldArtwork: true,
-          nullArtworkWidget: Container(
-            width: side,
-            height: side,
-            decoration: BoxDecoration(
-              color: Colors.white10,
-              borderRadius: BorderRadius.circular(28),
-            ),
-            child: const Icon(
-              Icons.music_note,
-              size: 100,
-              color: Colors.white38,
-            ),
-          ),
-        );
-
-        if (!isFullscreen && songId == _displayedSong.id) {
-          return Hero(
-            tag: 'now_playing_artwork_$songId',
-            createRectTween: (begin, end) =>
-                MaterialRectArcTween(begin: begin, end: end),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
-              child: artworkWidget,
-            ),
-          );
-        }
-
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(28),
-          child: artworkWidget,
-        );
-      },
-    );
-  }
-
-  Widget _buildArtworkView({Alignment alignment = Alignment.center}) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final maxSide = math.min(constraints.maxWidth, constraints.maxHeight);
-        final side = (maxSide.isFinite ? maxSide : 320.0).clamp(160.0, 340.0);
-
-        final pulse = Tween<double>(begin: 1.0, end: 1.02).animate(
-          CurvedAnimation(
-            parent: _artworkPulseController,
-            curve: Curves.easeInOut,
-          ),
-        );
-
-        return Align(
-          alignment: alignment,
-          child: ScaleTransition(
-            scale: pulse,
-            child: SizedBox(
-              width: side,
-              height: side,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(28),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (_primaryColor ?? Colors.black).withValues(
-                        alpha: 0.5,
-                      ),
-                      blurRadius: 40,
-                      spreadRadius: 10,
-                      offset: const Offset(0, 15),
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: _buildArtworkPageView(
-                  side: side,
-                  isFullscreen: false,
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildLyricsView() {
-    return SyncedLyricsView(
-      rawLyrics: _rawLyrics,
-      isSynced: _isSynced,
-      lrcLines: _lrcLines,
-      activeLyricIndex: _activeLyricIndex,
-      itemScrollController: _lyricItemScrollController,
-      itemPositionsListener: _lyricItemPositionsListener,
-      displayedArtworkBytes: _displayedArtworkBytes,
-      onSeek: (time) {
-        _pauseAutoScroll();
-        widget.player.seek(time);
-      },
-      onUserScroll: _pauseAutoScroll,
-      initialScrollIndex: _currentLyricIndex >= 0 ? _currentLyricIndex : 0,
-      initialAlignment: _alignmentForLine(
-        _currentLyricIndex >= 0 ? _currentLyricIndex : 0,
-      ),
-    );
-  }
 }
 

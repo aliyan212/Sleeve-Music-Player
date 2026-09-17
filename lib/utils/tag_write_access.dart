@@ -31,6 +31,7 @@ Future<void> syncMediaStoreTags({
   int? year,
   int? track,
   String? genre,
+  String? composer,
 }) async {
   if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
   try {
@@ -42,6 +43,7 @@ Future<void> syncMediaStoreTags({
       'year': year,
       'track': track,
       'genre': genre,
+      'composer': composer,
     });
   } catch (e) {
     debugPrint('syncMediaStoreTags non-fatal error: $e');
@@ -52,6 +54,8 @@ Future<void> syncMediaStoreTags({
 Future<void> writeTagsSafelyWithBackup(
   String path,
   Tag tag, {
+  String? composer,
+  String? lyricist,
   Future<bool> Function()? verify,
 }) async {
   if (kIsWeb) {
@@ -67,7 +71,7 @@ Future<void> writeTagsSafelyWithBackup(
   // Perform native audio tag write directly (fast, in-place).
   await AudioTags.write(path, tag);
 
-  // Synchronize ID3v2 TYER and ID3v1 trailer for MP3 files.
+  // Synchronize ID3v2 TYER, TCOM (composer), TEXT (lyricist), and ID3v1 trailer for MP3 files.
   // audiotags / lofty writes ID3v2.4 with TDRC and strips ID3v1, which causes
   // Android's MediaMetadataRetriever, MediaScanner, and external music players
   // (VLC, Poweramp, Samsung Music) to read the year as 0 or unknown.
@@ -81,8 +85,16 @@ Future<void> writeTagsSafelyWithBackup(
         album: tag.album,
         track: tag.trackNumber,
       );
+      if ((composer != null && composer.isNotEmpty) ||
+          (lyricist != null && lyricist.isNotEmpty)) {
+        await writeMp3Id3TextFrames(
+          path,
+          composer: composer,
+          lyricist: lyricist,
+        );
+      }
     } catch (e) {
-      debugPrint('writeMp3Id3YearAndId3v1 non-fatal error: $e');
+      debugPrint('writeMp3Id3 frames non-fatal error: $e');
     }
   }
 
@@ -107,6 +119,7 @@ Future<void> writeTagsSafelyWithBackup(
     year: tag.year,
     track: tag.trackNumber,
     genre: tag.genre,
+    composer: composer,
   );
 }
 
@@ -318,6 +331,274 @@ Future<void> _expandId3v2AndInsertFrame(
   final tempFile = File('${file.path}.tmp_tag');
   await tempFile.writeAsBytes(newBytes, flush: true);
   await tempFile.rename(file.path);
+}
+
+/// Reads requested ID3v2 text frames (e.g. 'TCOM', 'TEXT') from an MP3 file.
+Future<Map<String, String>> readMp3Id3TextFrames(
+  String path,
+  List<String> frameIds,
+) async {
+  final result = <String, String>{};
+  if (kIsWeb || !path.toLowerCase().endsWith('.mp3')) return result;
+
+  final file = File(path);
+  if (!await file.exists()) return result;
+
+  RandomAccessFile? raf;
+  try {
+    raf = await file.open(mode: FileMode.read);
+    final length = await raf.length();
+    if (length < 10) return result;
+
+    final header = await raf.read(10);
+    if (header[0] != 0x49 || header[1] != 0x44 || header[2] != 0x33) {
+      return result;
+    }
+
+    final versionMajor = header[3];
+    if (versionMajor < 3 || versionMajor > 4) return result;
+
+    final flags = header[5];
+    final hasExtendedHeader = (flags & 0x40) != 0;
+    final tagSize = ((header[6] & 0x7F) << 21) |
+                    ((header[7] & 0x7F) << 14) |
+                    ((header[8] & 0x7F) << 7) |
+                    (header[9] & 0x7F);
+
+    if (10 + tagSize > length) return result;
+    final tagBody = await raf.read(tagSize);
+
+    int pos = 0;
+    if (hasExtendedHeader) {
+      if (tagBody.length < 4) return result;
+      int extSize = versionMajor == 4
+          ? (((tagBody[0] & 0x7F) << 21) |
+             ((tagBody[1] & 0x7F) << 14) |
+             ((tagBody[2] & 0x7F) << 7) |
+             (tagBody[3] & 0x7F))
+          : ((tagBody[0] << 24) |
+             (tagBody[1] << 16) |
+             (tagBody[2] << 8) |
+             tagBody[3]);
+      pos += extSize;
+      if (pos >= tagBody.length) return result;
+    }
+
+    while (pos + 10 <= tagBody.length) {
+      if (tagBody[pos] == 0x00) break;
+      final id = String.fromCharCodes(tagBody.sublist(pos, pos + 4));
+      int size = versionMajor == 4
+          ? (((tagBody[pos + 4] & 0x7F) << 21) |
+             ((tagBody[pos + 5] & 0x7F) << 14) |
+             ((tagBody[pos + 6] & 0x7F) << 7) |
+             (tagBody[pos + 7] & 0x7F))
+          : ((tagBody[pos + 4] << 24) |
+             (tagBody[pos + 5] << 16) |
+             (tagBody[pos + 6] << 8) |
+             tagBody[pos + 7]);
+
+      if (size <= 0 || pos + 10 + size > tagBody.length) break;
+
+      if (frameIds.contains(id) && size > 1) {
+        final encoding = tagBody[pos + 10];
+        final payload = tagBody.sublist(pos + 11, pos + 10 + size);
+        String text;
+        try {
+          if (encoding == 3) {
+            text = utf8.decode(payload, allowMalformed: true);
+          } else if (encoding == 1 || encoding == 2) {
+            text = _decodeUtf16(payload);
+          } else {
+            text = latin1.decode(payload);
+          }
+          text = text.replaceAll('\u0000', '').trim();
+          if (text.isNotEmpty) {
+            result[id] = text;
+          }
+        } catch (_) {}
+      }
+      pos += 10 + size;
+    }
+  } catch (_) {
+  } finally {
+    try {
+      await raf?.close();
+    } catch (_) {}
+  }
+  return result;
+}
+
+String _decodeUtf16(Uint8List bytes) {
+  if (bytes.length < 2) return '';
+  final list = <int>[];
+  int start = 0;
+  bool isBE = false;
+  if (bytes.length >= 2) {
+    if (bytes[0] == 0xFE && bytes[1] == 0xFF) {
+      isBE = true;
+      start = 2;
+    } else if (bytes[0] == 0xFF && bytes[1] == 0xFE) {
+      isBE = false;
+      start = 2;
+    }
+  }
+  for (int i = start; i + 1 < bytes.length; i += 2) {
+    final code = isBE ? ((bytes[i] << 8) | bytes[i + 1]) : ((bytes[i + 1] << 8) | bytes[i]);
+    if (code != 0) list.add(code);
+  }
+  return String.fromCharCodes(list);
+}
+
+/// Synchronizes ID3v2 text frames ('TCOM' for composer, 'TEXT' for lyricist) for MP3 files.
+Future<void> writeMp3Id3TextFrames(
+  String path, {
+  String? composer,
+  String? lyricist,
+}) async {
+  if (!path.toLowerCase().endsWith('.mp3')) return;
+  final file = File(path);
+  if (!await file.exists()) return;
+
+  final frames = <String, String>{};
+  if (composer != null && composer.trim().isNotEmpty) {
+    frames['TCOM'] = composer.trim();
+  }
+  if (lyricist != null && lyricist.trim().isNotEmpty) {
+    frames['TEXT'] = lyricist.trim();
+  }
+  if (frames.isEmpty) return;
+
+  try {
+    final bytes = await file.readAsBytes();
+    if (bytes.length < 10) return;
+    if (bytes[0] != 0x49 || bytes[1] != 0x44 || bytes[2] != 0x33) return;
+
+    final versionMajor = bytes[3];
+    if (versionMajor < 3 || versionMajor > 4) return;
+
+    final flags = bytes[5];
+    final hasExtendedHeader = (flags & 0x40) != 0;
+    final tagSize = ((bytes[6] & 0x7F) << 21) |
+                    ((bytes[7] & 0x7F) << 14) |
+                    ((bytes[8] & 0x7F) << 7) |
+                    (bytes[9] & 0x7F);
+
+    if (10 + tagSize > bytes.length) return;
+
+    int pos = 10;
+    int extSize = 0;
+    if (hasExtendedHeader) {
+      if (tagSize < 4) return;
+      extSize = versionMajor == 4
+          ? (((bytes[10] & 0x7F) << 21) |
+             ((bytes[11] & 0x7F) << 14) |
+             ((bytes[12] & 0x7F) << 7) |
+             (bytes[13] & 0x7F))
+          : ((bytes[10] << 24) |
+             (bytes[11] << 16) |
+             (bytes[12] << 8) |
+             bytes[13]);
+      pos += extSize;
+    }
+
+    final preservedFrames = <Uint8List>[];
+    while (pos + 10 <= 10 + tagSize) {
+      if (bytes[pos] == 0x00) break; // Start of padding
+      final id = String.fromCharCodes(bytes.sublist(pos, pos + 4));
+      int size = versionMajor == 4
+          ? (((bytes[pos + 4] & 0x7F) << 21) |
+             ((bytes[pos + 5] & 0x7F) << 14) |
+             ((bytes[pos + 6] & 0x7F) << 7) |
+             (bytes[pos + 7] & 0x7F))
+          : ((bytes[pos + 4] << 24) |
+             (bytes[pos + 5] << 16) |
+             (bytes[pos + 6] << 8) |
+             bytes[pos + 7]);
+      if (size < 0 || pos + 10 + size > 10 + tagSize) break;
+
+      if (!frames.containsKey(id)) {
+        preservedFrames.add(bytes.sublist(pos, pos + 10 + size));
+      }
+      pos += 10 + size;
+    }
+
+    // Build the updated/new frames
+    final newFrameBytesList = <Uint8List>[];
+    for (final entry in frames.entries) {
+      final frameId = entry.key;
+      final text = entry.value;
+      final textUtf8 = utf8.encode(text);
+      final payloadSize = 1 + textUtf8.length;
+      final totalFrameLen = 10 + payloadSize;
+      final fBytes = Uint8List(totalFrameLen);
+      fBytes.setRange(0, 4, ascii.encode(frameId));
+      if (versionMajor == 4) {
+        fBytes[4] = (payloadSize >> 21) & 0x7F;
+        fBytes[5] = (payloadSize >> 14) & 0x7F;
+        fBytes[6] = (payloadSize >> 7) & 0x7F;
+        fBytes[7] = payloadSize & 0x7F;
+      } else {
+        fBytes[4] = (payloadSize >> 24) & 0xFF;
+        fBytes[5] = (payloadSize >> 16) & 0xFF;
+        fBytes[6] = (payloadSize >> 8) & 0xFF;
+        fBytes[7] = payloadSize & 0xFF;
+      }
+      fBytes[8] = 0;
+      fBytes[9] = 0;
+      fBytes[10] = 3; // UTF-8
+      fBytes.setRange(11, totalFrameLen, textUtf8);
+      newFrameBytesList.add(fBytes);
+    }
+
+    final allFrames = [...preservedFrames, ...newFrameBytesList];
+    int allFramesLength = extSize;
+    for (final f in allFrames) {
+      allFramesLength += f.length;
+    }
+
+    final audioBytes = bytes.sublist(10 + tagSize);
+
+    if (allFramesLength <= tagSize) {
+      final newBytes = Uint8List(10 + tagSize + audioBytes.length);
+      newBytes.setRange(0, 10, bytes.sublist(0, 10));
+      int writePos = 10;
+      if (hasExtendedHeader && extSize > 0) {
+        newBytes.setRange(10, 10 + extSize, bytes.sublist(10, 10 + extSize));
+        writePos += extSize;
+      }
+      for (final f in allFrames) {
+        newBytes.setRange(writePos, writePos + f.length, f);
+        writePos += f.length;
+      }
+      // Remaining bytes up to 10 + tagSize are already 0
+      newBytes.setRange(10 + tagSize, newBytes.length, audioBytes);
+      await file.writeAsBytes(newBytes, flush: true);
+    } else {
+      const extraPadding = 1024;
+      final newTagSize = allFramesLength + extraPadding;
+      final newBytes = Uint8List(10 + newTagSize + audioBytes.length);
+      newBytes.setRange(0, 10, bytes.sublist(0, 10));
+      newBytes[6] = (newTagSize >> 21) & 0x7F;
+      newBytes[7] = (newTagSize >> 14) & 0x7F;
+      newBytes[8] = (newTagSize >> 7) & 0x7F;
+      newBytes[9] = newTagSize & 0x7F;
+
+      int writePos = 10;
+      if (hasExtendedHeader && extSize > 0) {
+        newBytes.setRange(10, 10 + extSize, bytes.sublist(10, 10 + extSize));
+        writePos += extSize;
+      }
+      for (final f in allFrames) {
+        newBytes.setRange(writePos, writePos + f.length, f);
+        writePos += f.length;
+      }
+      // Remaining padding is already 0
+      newBytes.setRange(10 + newTagSize, newBytes.length, audioBytes);
+      await file.writeAsBytes(newBytes, flush: true);
+    }
+  } catch (e) {
+    debugPrint('writeMp3Id3TextFrames error: $e');
+  }
 }
 
 Future<void> _syncMp3Id3v1({

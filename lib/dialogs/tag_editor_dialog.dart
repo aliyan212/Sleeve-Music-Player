@@ -11,6 +11,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../services/local_audio_scanner.dart';
+import '../services/app_state_controller.dart';
 import '../ui/shared/fast_artwork_widget.dart';
 import '../utils/tag_write_access.dart';
 
@@ -39,9 +40,14 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
   late final TextEditingController _artistController;
   late final TextEditingController _albumController;
   late final TextEditingController _albumArtistController;
+  late final TextEditingController _composerController;
+  late final TextEditingController _lyricistController;
   late final TextEditingController _yearController;
   late final TextEditingController _genreController;
   late final TextEditingController _trackController;
+  late final TextEditingController _trackTotalController;
+  late final TextEditingController _discNumberController;
+  late final TextEditingController _discTotalController;
 
   bool _isSaving = false;
 
@@ -99,9 +105,14 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
     _artistController = TextEditingController(text: widget.song.artist ?? '');
     _albumController = TextEditingController(text: widget.song.album ?? '');
     _albumArtistController = TextEditingController();
+    _composerController = TextEditingController(text: widget.song.composer ?? '');
+    _lyricistController = TextEditingController();
     _yearController = TextEditingController();
     _genreController = TextEditingController(text: widget.song.genre ?? '');
     _trackController = TextEditingController();
+    _trackTotalController = TextEditingController();
+    _discNumberController = TextEditingController();
+    _discTotalController = TextEditingController();
 
     _loadExtraTags();
   }
@@ -112,9 +123,14 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
     _artistController.dispose();
     _albumController.dispose();
     _albumArtistController.dispose();
+    _composerController.dispose();
+    _lyricistController.dispose();
     _yearController.dispose();
     _genreController.dispose();
     _trackController.dispose();
+    _trackTotalController.dispose();
+    _discNumberController.dispose();
+    _discTotalController.dispose();
     super.dispose();
   }
 
@@ -202,26 +218,49 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
   Future<void> _loadExtraTags() async {
     try {
       final tag = await AudioTags.read(widget.song.data);
-      if (!mounted || tag == null) return;
+      final id3TextFrames = await readMp3Id3TextFrames(
+        widget.song.data,
+        ['TCOM', 'TEXT'],
+      );
+      if (!mounted) return;
 
       setState(() {
-        final title = (tag.title ?? '').trim();
-        if (title.isNotEmpty) _titleController.text = title;
+        if (tag != null) {
+          final title = (tag.title ?? '').trim();
+          if (title.isNotEmpty) _titleController.text = title;
 
-        final artist = (tag.trackArtist ?? '').trim();
-        if (artist.isNotEmpty) _artistController.text = artist;
+          final artist = (tag.trackArtist ?? '').trim();
+          if (artist.isNotEmpty) _artistController.text = artist;
 
-        final album = (tag.album ?? '').trim();
-        if (album.isNotEmpty) _albumController.text = album;
+          final album = (tag.album ?? '').trim();
+          if (album.isNotEmpty) _albumController.text = album;
 
-        final genre = (tag.genre ?? '').trim();
-        if (genre.isNotEmpty) _genreController.text = genre;
+          final genre = (tag.genre ?? '').trim();
+          if (genre.isNotEmpty) _genreController.text = genre;
 
-        _albumArtistController.text = (tag.albumArtist ?? '').trim();
-        final year = _normalizeYear(tag.year);
-        final track = _normalizeTrack(tag.trackNumber);
-        _yearController.text = year?.toString() ?? '';
-        _trackController.text = track?.toString() ?? '';
+          _albumArtistController.text = (tag.albumArtist ?? '').trim();
+          final year = _normalizeYear(tag.year);
+          final track = _normalizeTrack(tag.trackNumber);
+          final trackTotal = _normalizeTrack(tag.trackTotal);
+          final disc = _normalizeTrack(tag.discNumber);
+          final discTotal = _normalizeTrack(tag.discTotal);
+
+          _yearController.text = year?.toString() ?? '';
+          _trackController.text = track?.toString() ?? '';
+          _trackTotalController.text = trackTotal?.toString() ?? '';
+          _discNumberController.text = disc?.toString() ?? '';
+          _discTotalController.text = discTotal?.toString() ?? '';
+        }
+
+        final tcom = id3TextFrames['TCOM'];
+        if (tcom != null && tcom.isNotEmpty && _composerController.text.isEmpty) {
+          _composerController.text = tcom;
+        }
+
+        final text = id3TextFrames['TEXT'];
+        if (text != null && text.isNotEmpty) {
+          _lyricistController.text = text;
+        }
       });
     } catch (_) {}
   }
@@ -241,12 +280,23 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
         final expectedArtist = _artistController.text.trim();
         final expectedAlbum = _albumController.text.trim();
         final expectedAlbumArtist = _albumArtistController.text.trim();
+        final expectedComposer = _composerController.text.trim();
+        final expectedLyricist = _lyricistController.text.trim();
         final expectedGenre = _genreController.text.trim();
         final expectedYear = _normalizeYear(
           int.tryParse(_yearController.text.trim()),
         );
         final expectedTrack = _normalizeTrack(
           int.tryParse(_trackController.text.trim()),
+        );
+        final expectedTrackTotal = _normalizeTrack(
+          int.tryParse(_trackTotalController.text.trim()),
+        );
+        final expectedDiscNumber = _normalizeTrack(
+          int.tryParse(_discNumberController.text.trim()),
+        );
+        final expectedDiscTotal = _normalizeTrack(
+          int.tryParse(_discTotalController.text.trim()),
         );
 
         // Cover art handling: replace/update the front cover picture.
@@ -291,9 +341,9 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
           year: expectedYear,
           genre: expectedGenre,
           trackNumber: expectedTrack,
-          trackTotal: existingTag?.trackTotal,
-          discNumber: existingTag?.discNumber,
-          discTotal: existingTag?.discTotal,
+          trackTotal: expectedTrackTotal,
+          discNumber: expectedDiscNumber,
+          discTotal: expectedDiscTotal,
           lyrics: existingTag?.lyrics,
           duration: existingTag?.duration,
           pictures: pictures,
@@ -303,6 +353,8 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
         await writeTagsSafelyWithBackup(
           widget.song.data,
           tag,
+          composer: expectedComposer,
+          lyricist: expectedLyricist,
           verify: () async {
             final verify = await AudioTags.read(widget.song.data);
             final okTitle = _matchesString(verify?.title, expectedTitle);
@@ -318,6 +370,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
             final okGenre = _matchesString(verify?.genre, expectedGenre);
             final okYear = _matchesInt(verify?.year, expectedYear);
             final okTrack = _matchesTrack(verify?.trackNumber, expectedTrack);
+            final okDisc = _matchesTrack(verify?.discNumber, expectedDiscNumber);
 
             final coverRequested =
                 _newCoverBytes != null && _newCoverBytes!.isNotEmpty;
@@ -338,6 +391,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                 okGenre &&
                 okYear &&
                 okTrack &&
+                okDisc &&
                 coverOk;
           },
         );
@@ -360,15 +414,22 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
       final expectedArtist = _artistController.text.trim();
       final expectedAlbum = _albumController.text.trim();
       final expectedAlbumArtist = _albumArtistController.text.trim();
+      final expectedComposer = _composerController.text.trim();
       final expectedGenre = _genreController.text.trim();
       final expectedYear = _normalizeYear(int.tryParse(_yearController.text.trim()));
       final expectedTrack = _normalizeTrack(int.tryParse(_trackController.text.trim()));
 
       final updatedMap = Map<dynamic, dynamic>.from(widget.song.getMap);
+      final originalAdded = AppStateController.instance.dateAddedForSong(widget.song);
+      if (originalAdded > 0) {
+        updatedMap['date_added'] = originalAdded;
+        AppStateController.instance.lockSongDateAdded(widget.song.data, widget.song.id, originalAdded);
+      }
       if (expectedTitle.isNotEmpty) updatedMap['title'] = expectedTitle;
       if (expectedArtist.isNotEmpty) updatedMap['artist'] = expectedArtist;
       if (expectedAlbum.isNotEmpty) updatedMap['album'] = expectedAlbum;
       if (expectedAlbumArtist.isNotEmpty) updatedMap['album_artist'] = expectedAlbumArtist;
+      if (expectedComposer.isNotEmpty) updatedMap['composer'] = expectedComposer;
       if (expectedGenre.isNotEmpty) updatedMap['genre'] = expectedGenre;
       if (expectedYear != null && expectedYear > 0) updatedMap['year'] = expectedYear;
       if (expectedTrack != null && expectedTrack > 0) updatedMap['track'] = expectedTrack;
@@ -647,6 +708,18 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                       Icons.people_rounded,
                       context,
                     ),
+                    _buildTextField(
+                      _composerController,
+                      'Composer',
+                      Icons.architecture_rounded,
+                      context,
+                    ),
+                    _buildTextField(
+                      _lyricistController,
+                      'Lyricist',
+                      Icons.history_edu_rounded,
+                      context,
+                    ),
                     Row(
                       children: [
                         Expanded(
@@ -661,6 +734,18 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: _buildTextField(
+                            _genreController,
+                            'Genre',
+                            Icons.category_rounded,
+                            context,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildTextField(
                             _trackController,
                             'Track #',
                             Icons.tag_rounded,
@@ -668,13 +753,40 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                             keyboardType: TextInputType.number,
                           ),
                         ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildTextField(
+                            _trackTotalController,
+                            'Total Tracks',
+                            Icons.tag_rounded,
+                            context,
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
                       ],
                     ),
-                    _buildTextField(
-                      _genreController,
-                      'Genre',
-                      Icons.category_rounded,
-                      context,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildTextField(
+                            _discNumberController,
+                            'Disc #',
+                            Icons.album_outlined,
+                            context,
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildTextField(
+                            _discTotalController,
+                            'Total Discs',
+                            Icons.album_outlined,
+                            context,
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

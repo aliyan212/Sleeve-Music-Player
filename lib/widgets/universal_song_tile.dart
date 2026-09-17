@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+
+import '../ui/shared/bouncy_pressable.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import '../ui/shared/fast_artwork_widget.dart';
 import '../utils/format_utils.dart';
@@ -432,15 +433,11 @@ class UniversalSongTile extends StatelessWidget {
         ),
         child: Material(
           type: MaterialType.transparency,
-          child: InkWell(
-            borderRadius: resolvedRadius,
-            onTap: onTap,
-            onLongPress: onLongPress == null
-                ? null
-                : () {
-                    HapticFeedback.mediumImpact();
-                    onLongPress!();
-                  },
+          child: BouncyPressable(
+            scaleDown: 0.98,
+            onPressed: onTap,
+            onLongPress: onLongPress,
+            enableHaptic: false,
             child: Padding(
               padding: effectivePadding,
               child: content,

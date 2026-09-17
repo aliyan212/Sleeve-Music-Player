@@ -10,6 +10,7 @@ import '../../ui/shared/alphabetical_bubble_scroller.dart';
 import '../../ui/shared/app_empty_state.dart';
 import '../../utils/song_sort_utils.dart';
 import '../../widgets/search/app_search_view.dart';
+import '../../ui/shared/app_sort_bottom_sheet.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
 class AlbumsTab extends StatefulWidget {
@@ -116,55 +117,18 @@ class _AlbumsTabState extends State<AlbumsTab> {
                     appState.openSearch(initialFilter: SearchFilter.albums);
                   },
                 ),
-                PopupMenuButton<AlbumsSort>(
+                IconButton(
                   icon: const Icon(Icons.sort_rounded),
-                  tooltip: 'Sort',
-                  initialValue: albumsSort,
-                  onSelected: (mode) {
-                    HapticFeedback.selectionClick();
-                    appState.applyAlbumsSort(mode);
+                  tooltip: 'Sort albums',
+                  onPressed: () {
+                    showAlbumsSortBottomSheet(
+                      context,
+                      currentSort: albumsSort,
+                      onSortSelected: (mode) {
+                        appState.applyAlbumsSort(mode);
+                      },
+                    );
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(
-                      value: AlbumsSort.titleAsc,
-                      child: Text('Title (A → Z)'),
-                    ),
-                    PopupMenuItem(
-                      value: AlbumsSort.titleDesc,
-                      child: Text('Title (Z → A)'),
-                    ),
-                    PopupMenuDivider(),
-                    PopupMenuItem(
-                      value: AlbumsSort.artistAsc,
-                      child: Text('Artist (A → Z)'),
-                    ),
-                    PopupMenuItem(
-                      value: AlbumsSort.artistDesc,
-                      child: Text('Artist (Z → A)'),
-                    ),
-                    PopupMenuDivider(),
-                    PopupMenuItem(
-                      value: AlbumsSort.yearDesc,
-                      child: Text('Year (Newest First)'),
-                    ),
-                    PopupMenuItem(
-                      value: AlbumsSort.yearAsc,
-                      child: Text('Year (Oldest First)'),
-                    ),
-                    PopupMenuItem(
-                      value: AlbumsSort.albumArtistYear,
-                      child: Text('Album Artist / Year'),
-                    ),
-                    PopupMenuDivider(),
-                    PopupMenuItem(
-                      value: AlbumsSort.mostTracks,
-                      child: Text('Most Tracks'),
-                    ),
-                    PopupMenuItem(
-                      value: AlbumsSort.leastTracks,
-                      child: Text('Least Tracks'),
-                    ),
-                  ],
                 ),
                 const SizedBox(width: 4),
               ],
@@ -221,7 +185,7 @@ class _AlbumsTabState extends State<AlbumsTab> {
                           borderRadius: BorderRadius.circular(20),
                           onTap: () {
                             HapticFeedback.selectionClick();
-                            appState.openAlbumPageFromSong(song);
+                            appState.openAlbumPageFromSong(context, song);
                           },
                           onLongPress: () {
                             HapticFeedback.mediumImpact();
@@ -371,7 +335,7 @@ class _AlbumsTabState extends State<AlbumsTab> {
           icon: Icons.album_rounded,
           title: 'Open Album',
           subtitle: 'View tracks in this album',
-          onTap: () => appState.openAlbumPageFromSong(song),
+          onTap: () => appState.openAlbumPageFromSong(context, song),
         ),
         AppActionItem(
           icon: Icons.play_arrow_rounded,
@@ -380,7 +344,7 @@ class _AlbumsTabState extends State<AlbumsTab> {
           onTap: () async {
             final albumSongs = getAlbumSongs();
             if (albumSongs.isNotEmpty) {
-              await appState.playFromQueue(albumSongs, initialIndex: 0);
+              await appState.playFromQueue(context, albumSongs, initialIndex: 0);
             }
           },
         ),
@@ -391,7 +355,7 @@ class _AlbumsTabState extends State<AlbumsTab> {
           onTap: () async {
             final albumSongs = getAlbumSongs();
             if (albumSongs.isNotEmpty) {
-              await appState.insertAllInQueue(albumSongs);
+              await appState.insertAllInQueue(context, albumSongs);
             }
           },
         ),
@@ -402,7 +366,7 @@ class _AlbumsTabState extends State<AlbumsTab> {
           onTap: () async {
             final albumSongs = getAlbumSongs();
             if (albumSongs.isNotEmpty) {
-              await appState.addAllToQueueEnd(albumSongs);
+              await appState.addAllToQueueEnd(context, albumSongs);
             }
           },
         ),

@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
 import '../services/local_audio_scanner.dart';
+import '../services/app_state_controller.dart';
 import '../ui/shared/fast_artwork_widget.dart';
 import '../utils/song_sort_utils.dart';
 import '../utils/tag_write_access.dart';
@@ -439,6 +440,11 @@ class _BatchTagEditorDialogState extends State<BatchTagEditorDialog> {
 
             // Construct updated in-memory SongModel
             final updatedMap = Map<dynamic, dynamic>.from(song.getMap);
+            final originalAdded = AppStateController.instance.dateAddedForSong(song);
+            if (originalAdded > 0) {
+              updatedMap['date_added'] = originalAdded;
+              AppStateController.instance.lockSongDateAdded(song.data, song.id, originalAdded);
+            }
             if (_applyTitle) updatedMap['title'] = finalTitle;
             if (_applyArtist) updatedMap['artist'] = finalArtist;
             if (_applyAlbum) updatedMap['album'] = finalAlbum;

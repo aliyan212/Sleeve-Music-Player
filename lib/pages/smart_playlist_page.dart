@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../data/models/user_playlist.dart';
 import '../ui/shared/bottom_bars_gutter.dart';
 import '../ui/shared/fast_artwork_widget.dart';
 import '../utils/format_utils.dart';
@@ -24,6 +26,7 @@ class SmartPlaylistPage extends StatefulWidget {
     required this.onQueueChanged,
     required this.selectedTabIndex,
     required this.onNavigateTab,
+    this.kind,
     this.embeddedInHome = false,
     this.onClose,
     required this.onOpenNowPlaying,
@@ -38,6 +41,7 @@ class SmartPlaylistPage extends StatefulWidget {
   final IconData icon;
   final List<SongModel> songs;
   final List<SongModel> librarySongs;
+  final SmartPlaylistKind? kind;
   final Function(List<SongModel>) onQueueChanged;
   final int selectedTabIndex;
   final ValueChanged<int> onNavigateTab;
@@ -56,6 +60,19 @@ class _SmartPlaylistPageState extends State<SmartPlaylistPage> {
   late final ScrollController _scrollController;
   bool _isScrolled = false;
 
+  static const String _kMostPlayedLimitKey =
+      'smart_playlist_most_played_limit';
+  static const List<int> _kAllowedLimits = [10, 20, 50, 100];
+  int _mostPlayedLimit = 50;
+
+  bool get isMostPlayed =>
+      widget.kind == SmartPlaylistKind.mostPlayed ||
+      widget.title.toLowerCase().contains('most played');
+
+  List<SongModel> get displayedSongs => isMostPlayed
+      ? widget.songs.take(_mostPlayedLimit).toList()
+      : widget.songs;
+
   static final Map<int, ({Color primary, Color secondary, Color tertiary})>
       _paletteCache = {};
   int? _lastPaletteSongId;
@@ -65,6 +82,35 @@ class _SmartPlaylistPageState extends State<SmartPlaylistPage> {
   void initState() {
     super.initState();
     _scrollController = ScrollController()..addListener(_handleScroll);
+    if (isMostPlayed) {
+      _loadMostPlayedLimit();
+    }
+  }
+
+  Future<void> _loadMostPlayedLimit() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getInt(_kMostPlayedLimitKey);
+      if (saved != null && _kAllowedLimits.contains(saved)) {
+        if (mounted) {
+          setState(() {
+            _mostPlayedLimit = saved;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _setMostPlayedLimit(int limit) async {
+    if (_mostPlayedLimit == limit) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _mostPlayedLimit = limit;
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_kMostPlayedLimitKey, limit);
+    } catch (_) {}
   }
 
   void _handleScroll() {
@@ -139,13 +185,31 @@ class _SmartPlaylistPageState extends State<SmartPlaylistPage> {
   }
 
   Future<void> _playShuffled() async {
+    if (displayedSongs.isEmpty) return;
+    if (isMostPlayed) {
+      final shuffled = List<SongModel>.from(displayedSongs)..shuffle();
+      await playbackController.playFromQueue(shuffled, initialIndex: 0);
+      return;
+    }
     if (widget.onShuffle != null) {
       await widget.onShuffle!();
       return;
     }
-    if (widget.songs.isEmpty) return;
     final shuffled = List<SongModel>.from(widget.songs)..shuffle();
     await playbackController.playFromQueue(shuffled, initialIndex: 0);
+  }
+
+  Future<void> _playAll() async {
+    if (displayedSongs.isEmpty) return;
+    if (isMostPlayed) {
+      await playbackController.playFromQueue(displayedSongs, initialIndex: 0);
+      return;
+    }
+    if (widget.onPlayAll != null) {
+      await widget.onPlayAll!();
+      return;
+    }
+    await playbackController.playFromQueue(widget.songs, initialIndex: 0);
   }
 
   @override
@@ -153,13 +217,14 @@ class _SmartPlaylistPageState extends State<SmartPlaylistPage> {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final leadSongId = widget.songs.isNotEmpty ? widget.songs.first.id : null;
+    final leadSongId =
+        displayedSongs.isNotEmpty ? displayedSongs.first.id : null;
     _syncPalette(leadSongId);
 
     final totalMs =
-        widget.songs.fold<int>(0, (sum, s) => sum + (s.duration ?? 0));
+        displayedSongs.fold<int>(0, (sum, s) => sum + (s.duration ?? 0));
     final subtitle =
-        '${widget.songs.length} ${widget.songs.length == 1 ? 'track' : 'tracks'} • ${formatPlaylistDuration(totalMs)}';
+        '${displayedSongs.length} ${displayedSongs.length == 1 ? 'track' : 'tracks'} • ${formatPlaylistDuration(totalMs)}';
 
     final content = Material(
       color: Theme.of(context).scaffoldBackgroundColor,
@@ -317,37 +382,37 @@ class _SmartPlaylistPageState extends State<SmartPlaylistPage> {
                                     child: Stack(
                                       fit: StackFit.expand,
                                       children: [
-                                        if (widget.songs.isNotEmpty)
-                                          FastArtworkWidget(
-                                            id: widget.songs.first.id,
-                                            type: ArtworkType.AUDIO,
-                                            width: 160,
-                                            height: 160,
-                                            artworkFit: BoxFit.cover,
-                                            nullArtworkWidget: Container(
-                                              color: cs.surfaceContainerHighest,
-                                              child: Center(
-                                                child: Icon(
-                                                  widget.icon,
-                                                  color: cs.primary,
-                                                  size: 64,
-                                                ),
-                                              ),
-                                            ),
-                                          )
-                                        else
-                                          Container(
-                                            color: cs.surfaceContainerHighest,
-                                            child: Center(
-                                              child: Icon(
-                                                widget.icon,
-                                                color: cs.primary,
-                                                size: 64,
-                                              ),
-                                            ),
-                                          ),
-                                        if (widget.songs.isNotEmpty)
-                                          Positioned(
+                                         if (displayedSongs.isNotEmpty)
+                                           FastArtworkWidget(
+                                             id: displayedSongs.first.id,
+                                             type: ArtworkType.AUDIO,
+                                             width: 160,
+                                             height: 160,
+                                             artworkFit: BoxFit.cover,
+                                             nullArtworkWidget: Container(
+                                               color: cs.surfaceContainerHighest,
+                                               child: Center(
+                                                 child: Icon(
+                                                   widget.icon,
+                                                   color: cs.primary,
+                                                   size: 64,
+                                                 ),
+                                               ),
+                                             ),
+                                           )
+                                         else
+                                           Container(
+                                             color: cs.surfaceContainerHighest,
+                                             child: Center(
+                                               child: Icon(
+                                                 widget.icon,
+                                                 color: cs.primary,
+                                                 size: 64,
+                                               ),
+                                             ),
+                                           ),
+                                         if (displayedSongs.isNotEmpty)
+                                           Positioned(
                                             right: 8,
                                             bottom: 8,
                                             child: Container(
@@ -436,9 +501,9 @@ class _SmartPlaylistPageState extends State<SmartPlaylistPage> {
                                   children: [
                                     Expanded(
                                       child: FilledButton.icon(
-                                        onPressed: widget.songs.isEmpty
+                                        onPressed: displayedSongs.isEmpty
                                             ? null
-                                            : widget.onPlayAll,
+                                            : _playAll,
                                         icon: const Icon(
                                             Icons.play_arrow_rounded,
                                             size: 22),
@@ -462,7 +527,7 @@ class _SmartPlaylistPageState extends State<SmartPlaylistPage> {
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: FilledButton.tonalIcon(
-                                        onPressed: widget.songs.isEmpty
+                                        onPressed: displayedSongs.isEmpty
                                             ? null
                                             : _playShuffled,
                                         icon: const Icon(Icons.shuffle_rounded,
@@ -486,11 +551,49 @@ class _SmartPlaylistPageState extends State<SmartPlaylistPage> {
                                     ),
                                   ],
                                 ),
+                                if (isMostPlayed) ...[
+                                  const SizedBox(height: 16),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: SegmentedButton<int>(
+                                      segments: const [
+                                        ButtonSegment<int>(
+                                          value: 10,
+                                          label: Text('Top 10'),
+                                        ),
+                                        ButtonSegment<int>(
+                                          value: 20,
+                                          label: Text('Top 20'),
+                                        ),
+                                        ButtonSegment<int>(
+                                          value: 50,
+                                          label: Text('Top 50'),
+                                        ),
+                                        ButtonSegment<int>(
+                                          value: 100,
+                                          label: Text('Top 100'),
+                                        ),
+                                      ],
+                                      selected: {_mostPlayedLimit},
+                                      onSelectionChanged: (newSet) {
+                                        if (newSet.isNotEmpty) {
+                                          _setMostPlayedLimit(newSet.first);
+                                        }
+                                      },
+                                      showSelectedIcon: false,
+                                      style: const ButtonStyle(
+                                        visualDensity: VisualDensity.compact,
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
                         ),
-                        if (widget.songs.isEmpty)
+                        if (displayedSongs.isEmpty)
                           AppEmptyState.sliver(
                             icon: widget.icon,
                             title: 'No tracks yet',
@@ -501,7 +604,7 @@ class _SmartPlaylistPageState extends State<SmartPlaylistPage> {
                           SliverList(
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
-                                final song = widget.songs[index];
+                                final song = displayedSongs[index];
                                 final artistText =
                                     (song.artist ?? '').trim().isEmpty
                                         ? 'Unknown Artist'
@@ -511,9 +614,18 @@ class _SmartPlaylistPageState extends State<SmartPlaylistPage> {
                                 final isCurrentlyPlaying =
                                     isCurrent && isAudioPlaying;
 
+                                final playCount = playbackController
+                                        .playCountBySongId[song.id] ??
+                                    0;
+                                final playCountText =
+                                    '$playCount ${playCount == 1 ? 'play' : 'plays'}';
+                                final subtitleText = isMostPlayed
+                                    ? '$artistText • $playCountText'
+                                    : artistText;
+
                                 return UniversalSongTile(
                                   song: song,
-                                  subtitle: artistText,
+                                  subtitle: subtitleText,
                                   isCurrent: isCurrent,
                                   isPlaying: isCurrentlyPlaying,
                                   artworkSize: 48,
@@ -544,16 +656,23 @@ class _SmartPlaylistPageState extends State<SmartPlaylistPage> {
                                   ),
                                   onTap: () {
                                     HapticFeedback.selectionClick();
-                                    widget.onPlaySong(song);
+                                    if (isMostPlayed) {
+                                      playbackController.playFromQueue(
+                                        displayedSongs,
+                                        initialIndex: index,
+                                      );
+                                    } else {
+                                      widget.onPlaySong(song);
+                                    }
                                   },
                                   onLongPress: () {
                                     HapticFeedback.selectionClick();
                                     AppStateController.instance
-                                        .showSongOptions(song, index);
+                                        .showSongOptions(context, song, index);
                                   },
                                 );
                               },
-                              childCount: widget.songs.length,
+                              childCount: displayedSongs.length,
                             ),
                           ),
                         buildBottomBarsGutter(context),

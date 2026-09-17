@@ -557,7 +557,7 @@ class _ArtistPageState extends State<ArtistPage> {
                                     ),
                                   ),
                                   child: Text(
-                                    '${widget.albums.length} ${widget.albums.length == 1 ? 'album' : 'albums'} • $totalTracks tracks • ${formatTime(totalMs)}',
+                                    '${widget.albums.length} ${widget.albums.length == 1 ? 'album' : 'albums'} • $totalTracks tracks • ${formatPlaylistDuration(totalMs)}',
                                     style: Theme.of(context)
                                         .textTheme
                                         .labelMedium
@@ -717,7 +717,7 @@ class _ArtistPageState extends State<ArtistPage> {
                                       const SizedBox(width: 8),
                                     ],
                                     Text(
-                                      formatTime(a.totalDurationMs),
+                                      formatPlaylistDuration(a.totalDurationMs),
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodySmall

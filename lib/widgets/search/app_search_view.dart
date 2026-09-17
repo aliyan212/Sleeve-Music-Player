@@ -183,6 +183,12 @@ class _AppSearchViewState extends State<AppSearchView> {
     super.dispose();
   }
 
+  void _dismissSearchAndPop() {
+    _focusNode.unfocus();
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).pop();
+  }
+
   void _recordQueryAndSave(String q) {
     if (q.trim().isNotEmpty) {
       SearchHistoryManager.addQuery(q.trim());
@@ -483,8 +489,7 @@ class _AppSearchViewState extends State<AppSearchView> {
               onPressed: () {
                 _recordQueryAndSave(_query);
                 HapticFeedback.selectionClick();
-                Navigator.of(context).pop();
-                FocusManager.instance.primaryFocus?.unfocus();
+                _dismissSearchAndPop();
                 if (idx != -1) {
                   playbackController.playFromQueue(songs, initialIndex: idx);
                 }
@@ -493,8 +498,7 @@ class _AppSearchViewState extends State<AppSearchView> {
             onTap: () {
               _recordQueryAndSave(_query);
               HapticFeedback.selectionClick();
-              Navigator.of(context).pop();
-              FocusManager.instance.primaryFocus?.unfocus();
+              _dismissSearchAndPop();
               if (idx != -1) {
                 playbackController.playFromQueue(songs, initialIndex: idx);
               }
@@ -564,9 +568,8 @@ class _AppSearchViewState extends State<AppSearchView> {
             onTap: () {
               _recordQueryAndSave(_query);
               HapticFeedback.selectionClick();
-              Navigator.of(context).pop();
-              FocusManager.instance.primaryFocus?.unfocus();
-              appState.openAlbumPageFromSong(song);
+              _dismissSearchAndPop();
+              appState.openAlbumPageFromSong(context, song);
             },
           ),
         );
@@ -619,9 +622,8 @@ class _AppSearchViewState extends State<AppSearchView> {
             onTap: () {
               _recordQueryAndSave(_query);
               HapticFeedback.selectionClick();
-              Navigator.of(context).pop();
-              FocusManager.instance.primaryFocus?.unfocus();
-              appState.openArtistPageByName(name);
+              _dismissSearchAndPop();
+              appState.openArtistPageByName(context, name);
             },
           ),
         );
@@ -649,92 +651,113 @@ class _AppSearchViewState extends State<AppSearchView> {
 
     final hasAnyResults = trackHits.isNotEmpty || albumHits.isNotEmpty || artistHits.isNotEmpty;
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              child: SearchBar(
-                controller: _controller,
-                focusNode: _focusNode,
-                autoFocus: true,
-                hintText: _getHintText(),
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  tooltip: 'Back',
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    Navigator.of(context).pop();
-                  },
-                ),
-                trailing: [
-                  if (_controller.text.isNotEmpty)
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded),
-                      tooltip: 'Clear',
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        _focusNode.unfocus();
+        FocusManager.instance.primaryFocus?.unfocus();
+      },
+      child: Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            _focusNode.unfocus();
+            FocusScope.of(context).unfocus();
+          },
+          child: SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                  child: SearchBar(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    autoFocus: true,
+                    onTapOutside: (_) {
+                      _focusNode.unfocus();
+                      FocusScope.of(context).unfocus();
+                    },
+                    hintText: _getHintText(),
+                    leading: IconButton(
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      tooltip: 'Back',
                       onPressed: () {
-                        _controller.clear();
-                        setState(() => _query = '');
+                        HapticFeedback.selectionClick();
+                        _dismissSearchAndPop();
                       },
                     ),
-                ],
-                onChanged: (val) {
-                  setState(() => _query = val.trim());
-                },
-                onSubmitted: (val) {
-                  _recordQueryAndSave(val);
-                },
-              ),
-            ),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              child: Row(
-                children: [
-                  _buildFilterChip(
-                    filter: SearchFilter.all,
-                    label: 'All',
-                  ),
-                  _buildFilterChip(
-                    filter: SearchFilter.tracks,
-                    label: 'Tracks',
-                    count: trackHits.length,
-                  ),
-                  _buildFilterChip(
-                    filter: SearchFilter.albums,
-                    label: 'Albums',
-                    count: albumHits.length,
-                  ),
-                  _buildFilterChip(
-                    filter: SearchFilter.artists,
-                    label: 'Artists',
-                    count: artistHits.length,
-                  ),
-                ],
-              ),
-            ),
-            Divider(
-              height: 1,
-              color: cs.outlineVariant.withValues(alpha: 0.28),
-            ),
-            Expanded(
-              child: q.isEmpty
-                  ? _buildRecentSearchesView(cs)
-                  : !hasAnyResults
-                      ? AppEmptyState(
-                          icon: Icons.search_off_rounded,
-                          title: 'No results found',
-                          message:
-                              'We couldn’t find any matches for "$_query". Check for typos or try searching by artist.',
-                        )
-                      : ListView(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          children: resultItems,
+                    trailing: [
+                      if (_controller.text.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          tooltip: 'Clear',
+                          onPressed: () {
+                            _controller.clear();
+                            setState(() => _query = '');
+                          },
                         ),
+                    ],
+                    onChanged: (val) {
+                      setState(() => _query = val.trim());
+                    },
+                    onSubmitted: (val) {
+                      _recordQueryAndSave(val);
+                      _focusNode.unfocus();
+                      FocusScope.of(context).unfocus();
+                    },
+                  ),
+                ),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: Row(
+                    children: [
+                      _buildFilterChip(
+                        filter: SearchFilter.all,
+                        label: 'All',
+                      ),
+                      _buildFilterChip(
+                        filter: SearchFilter.tracks,
+                        label: 'Tracks',
+                        count: trackHits.length,
+                      ),
+                      _buildFilterChip(
+                        filter: SearchFilter.albums,
+                        label: 'Albums',
+                        count: albumHits.length,
+                      ),
+                      _buildFilterChip(
+                        filter: SearchFilter.artists,
+                        label: 'Artists',
+                        count: artistHits.length,
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(
+                  height: 1,
+                  color: cs.outlineVariant.withValues(alpha: 0.28),
+                ),
+                Expanded(
+                  child: q.isEmpty
+                      ? _buildRecentSearchesView(cs)
+                      : !hasAnyResults
+                          ? AppEmptyState(
+                              icon: Icons.search_off_rounded,
+                              title: 'No results found',
+                              message:
+                                  'We couldn’t find any matches for "$_query". Check for typos or try searching by artist.',
+                            )
+                          : ListView(
+                              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              children: resultItems,
+                            ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -769,6 +792,7 @@ class _AppSearchViewState extends State<AppSearchView> {
     }
 
     return ListView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
         Padding(
@@ -825,6 +849,8 @@ class _AppSearchViewState extends State<AppSearchView> {
                 TextPosition(offset: item.length),
               );
               setState(() => _query = item);
+              _focusNode.unfocus();
+              FocusScope.of(context).unfocus();
             },
           ),
       ],

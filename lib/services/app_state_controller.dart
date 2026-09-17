@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -42,17 +43,7 @@ class AppStateController extends ChangeNotifier
       notifyListeners();
     };
     unawaited(loadSavedSortPreferences());
-  }
-
-  @override
-  BuildContext get context => navigatorKey.currentContext!;
-
-  @override
-  void showSnackBar(SnackBar snackBar, {BuildContext? context}) {
-    final ctx = context ?? navigatorKey.currentContext;
-    if (ctx != null && ctx.mounted) {
-      ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(snackBar);
-    }
+    unawaited(loadLockedDateAddedPreferences());
   }
 
   final PlaybackController _controller = playbackController;
@@ -73,6 +64,11 @@ class AppStateController extends ChangeNotifier
   static const String _librarySortKey = "library_sort_mode_v1";
   static const String _albumsSortKey = "albums_sort_mode_v1";
   static const String _albumArtistsSortKey = "album_artists_sort_mode_v1";
+  static const String _lockedDateAddedKey = "song_locked_date_added_v1";
+
+  final Map<String, int> _lockedDateAddedByPath = {};
+  final Map<int, int> _lockedDateAddedById = {};
+  bool _dateAddedPreferencesLoaded = false;
 
   List<AlbumArtistStat> cachedAlbumArtists = <AlbumArtistStat>[];
   List<AlbumTabStat> cachedAlbums = <AlbumTabStat>[];
@@ -427,7 +423,57 @@ class AppStateController extends ChangeNotifier
     notifyListeners();
   }
 
+  Future<void> loadLockedDateAddedPreferences() async {
+    if (_dateAddedPreferencesLoaded) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_lockedDateAddedKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          for (final entry in decoded.entries) {
+            final key = entry.key.toString();
+            final val = entry.value is int ? entry.value as int : int.tryParse(entry.value.toString());
+            if (val != null && val > 0) {
+              _lockedDateAddedByPath[key] = val;
+              final parsedId = int.tryParse(key);
+              if (parsedId != null) {
+                _lockedDateAddedById[parsedId] = val;
+              }
+            }
+          }
+        }
+      }
+      _dateAddedPreferencesLoaded = true;
+    } catch (e) {
+      debugPrint('Error loading locked date added: $e');
+    }
+  }
+
+  void _persistLockedDateAdded() {
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString(_lockedDateAddedKey, jsonEncode(_lockedDateAddedByPath));
+    }).catchError((_) {});
+  }
+
+  void lockSongDateAdded(String path, int id, int timestampMs) {
+    if (timestampMs <= 0) return;
+    _lockedDateAddedByPath[path] = timestampMs;
+    _lockedDateAddedById[id] = timestampMs;
+    _persistLockedDateAdded();
+  }
+
+  int dateAddedForSong(SongModel s) {
+    return _dateAddedFromSong(s);
+  }
+
   int _dateAddedFromSong(SongModel s) {
+    // 1. Check locked addition timestamp first so edits never alter it
+    final locked = _lockedDateAddedByPath[s.data] ?? _lockedDateAddedById[s.id];
+    if (locked != null && locked > 0) {
+      return locked;
+    }
+
     final v =
         s.getMap['date_added'] ??
         s.getMap['dateAdded'] ??
@@ -436,19 +482,26 @@ class AppStateController extends ChangeNotifier
     final parsed = v is int ? v : int.tryParse(v.toString());
     if (parsed == null) return 0;
 
+    int ms = parsed;
     // Heuristic: MediaStore date_added is usually seconds since epoch.
     // If it looks like seconds, convert to ms.
     if (parsed > 0 && parsed < 1000000000000) {
       // < ~2001-09-09 in ms; likely seconds.
-      if (parsed > 1000000000) return parsed * 1000;
+      if (parsed > 1000000000) ms = parsed * 1000;
     }
-    return parsed;
+
+    if (ms > 0) {
+      _lockedDateAddedByPath[s.data] = ms;
+      _lockedDateAddedById[s.id] = ms;
+      _persistLockedDateAdded();
+    }
+    return ms;
   }
 
-  Future<void> checkNotificationPermission() async {
+  Future<void> checkNotificationPermission(BuildContext context) async {
     final ok = await ensureNotificationPermissionIfNeeded();
-    if (!ok) {
-      showSnackBar(
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text(
             'Notifications are blocked, so the player notification can\'t be shown.',
@@ -776,7 +829,7 @@ class AppStateController extends ChangeNotifier
     await prefs.setStringList(_excludedFoldersKey, folders.toList());
   }
 
-  void openManageFoldersDialog() {
+  void openManageFoldersDialog(BuildContext context) {
     showManageFoldersDialog(
       context: context,
       initialIncluded: includedFolders,
@@ -873,6 +926,58 @@ class AppStateController extends ChangeNotifier
     notifyListeners();
   }
 
+  Future<void> playQueueShuffled(BuildContext context) async {
+    final queue = List<SongModel>.from(songs);
+    queue.shuffle();
+    await checkNotificationPermission(context);
+    await _controller.playFromQueue(queue, initialIndex: 0);
+  }
+
+  Future<void> playCustomQueue(
+    BuildContext context,
+    List<SongModel> newPlaylist,
+    int initialIndex,
+  ) async {
+    if (newPlaylist.isEmpty) return;
+    if (initialIndex < 0 || initialIndex >= newPlaylist.length) {
+      initialIndex = 0;
+    }
+
+    final songId = newPlaylist[initialIndex].id;
+    await checkNotificationPermission(context);
+
+    final playlist = _controller.buildPlaylist(newPlaylist);
+
+    _controller.currentPlaylist = playlist;
+    final libraryIndex = songs.indexWhere((s) => s.id == songId);
+    _controller.currentPlayIndex = libraryIndex >= 0 ? libraryIndex : null;
+    _controller.currentSongId = songId;
+
+    try {
+      _controller.setSuppressIndexUpdates(true);
+      await _controller.player.setAudioSources(
+        playlist,
+        initialIndex: initialIndex,
+      );
+      unawaited(_controller.player.play());
+      _controller.recordPlayForSongId(songId);
+    } catch (e, st) {
+      debugPrint('Failed to play custom queue initialIndex=$initialIndex: $e');
+      debugPrintStack(stackTrace: st);
+      if (context.mounted) {
+        _controller.currentPlayIndex = null;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Playback failed: ${e.toString()}'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      _controller.setSuppressIndexUpdates(false);
+    }
+  }
+
   Future<void> applySort(SortMode mode) async {
     await saveLibrarySortPreference(mode);
     await _controller.applySort(mode);
@@ -882,13 +987,14 @@ class AppStateController extends ChangeNotifier
   }
 
   Future<void> playFromQueue(
+    BuildContext context,
     List<SongModel> queue, {
     required int initialIndex,
   }) async {
     if (queue.isEmpty) return;
     if (initialIndex < 0 || initialIndex >= queue.length) return;
 
-    await checkNotificationPermission();
+    await checkNotificationPermission(context);
 
     final newPlaylist = _controller.buildPlaylist(queue);
     final songId = queue[initialIndex].id;
@@ -909,9 +1015,9 @@ class AppStateController extends ChangeNotifier
     } catch (e, st) {
       debugPrint('Failed to play custom queue initialIndex=$initialIndex: $e');
       debugPrintStack(stackTrace: st);
-      if (true) {
+      if (context.mounted) {
         _controller.currentPlayIndex = null;
-        showSnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Playback failed: ${e.toString()}'),
             behavior: SnackBarBehavior.floating,
@@ -923,19 +1029,19 @@ class AppStateController extends ChangeNotifier
     }
   }
 
-  Future<void> playSong(int index) async {
+  Future<void> playSong(BuildContext context, int index) async {
     if (index < 0 || index >= songs.length) return;
-    await checkNotificationPermission();
+    await checkNotificationPermission(context);
     await _controller.playSong(index);
   }
 
-  Future<void> insertAllInQueue(List<SongModel> songsToInsert) async {
-    await checkNotificationPermission();
+  Future<void> insertAllInQueue(BuildContext context, List<SongModel> songsToInsert) async {
+    await checkNotificationPermission(context);
     await _controller.insertAllInQueue(songsToInsert);
   }
 
-  Future<void> addAllToQueueEnd(List<SongModel> songsToAdd) async {
-    await checkNotificationPermission();
+  Future<void> addAllToQueueEnd(BuildContext context, List<SongModel> songsToAdd) async {
+    await checkNotificationPermission(context);
     await _controller.addAllToQueueEnd(songsToAdd);
   }
 }

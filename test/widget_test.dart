@@ -8,6 +8,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:animations/animations.dart';
 import 'package:music_player/core/theme/app_theme.dart';
 import 'package:music_player/ui/shared/app_empty_state.dart';
@@ -24,11 +25,19 @@ import 'package:music_player/utils/song_sort_utils.dart';
 import 'package:music_player/utils/tag_write_access.dart';
 import 'package:music_player/data/models/user_playlist.dart';
 import 'package:music_player/services/app_state_controller.dart';
+import 'package:music_player/services/loved_songs_service.dart';
 import 'package:music_player/services/playback_controller.dart';
+import 'package:music_player/services/sleep_timer_service.dart';
 import 'package:music_player/widgets/search/app_search_view.dart';
 import 'package:music_player/widgets/mini_player.dart';
 import 'package:music_player/widgets/universal_song_tile.dart';
 import 'package:music_player/ui/shared/fast_artwork_widget.dart';
+import 'package:music_player/ui/shared/bottom_bars_gutter.dart';
+import 'package:music_player/widgets/now_playing/now_playing_landscape_view.dart';
+import 'package:music_player/ui/shared/app_sort_bottom_sheet.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:music_player/dialogs/song_info_dialog.dart';
+import 'package:music_player/pages/smart_playlist_page.dart';
 
 void main() {
   setUp(() {
@@ -713,6 +722,56 @@ void main() {
       await appState.deletePlaylist(playlist);
     });
 
+    test('Liked Songs playlist is initialized and stays pinned at index 0', () async {
+      final appState = AppStateController.instance;
+      await appState.loadUserPlaylists();
+
+      expect(appState.likedSongsPlaylist, isNotNull);
+      expect(appState.likedSongsPlaylist!.id, UserPlaylist.likedSongsPlaylistId);
+      expect(appState.likedSongsPlaylist!.name, UserPlaylist.likedSongsPlaylistName);
+      expect(appState.userPlaylists.first.id, UserPlaylist.likedSongsPlaylistId);
+    });
+
+    test('toggleLikedSong adds and removes song from liked_songs and LovedSongsService', () async {
+      final appState = AppStateController.instance;
+      await appState.loadUserPlaylists();
+      const songId = 99991;
+
+      if (appState.likedSongsPlaylist!.songIds.contains(songId)) {
+        await appState.toggleLikedSong(songId);
+      }
+      expect(LovedSongsService.instance.isLoved(songId), isFalse);
+      expect(appState.likedSongsPlaylist!.songIds.contains(songId), isFalse);
+
+      final added = await appState.toggleLikedSong(songId);
+      expect(added, isTrue);
+      expect(LovedSongsService.instance.isLoved(songId), isTrue);
+      expect(appState.likedSongsPlaylist!.songIds.contains(songId), isTrue);
+
+      final removed = await appState.toggleLikedSong(songId);
+      expect(removed, isFalse);
+      expect(LovedSongsService.instance.isLoved(songId), isFalse);
+      expect(appState.likedSongsPlaylist!.songIds.contains(songId), isFalse);
+    });
+
+    test('reorderCustomUserPlaylists preserves Liked Songs at index 0', () async {
+      final appState = AppStateController.instance;
+      await appState.loadUserPlaylists();
+
+      final plA = await appState.createNewPlaylist('Custom Alpha');
+      final plB = await appState.createNewPlaylist('Custom Beta');
+      expect(plA, isNotNull);
+      expect(plB, isNotNull);
+
+      expect(appState.userPlaylists.first.id, UserPlaylist.likedSongsPlaylistId);
+
+      appState.reorderCustomUserPlaylists(0, 2);
+      expect(appState.userPlaylists.first.id, UserPlaylist.likedSongsPlaylistId);
+
+      await appState.deletePlaylist(plA!);
+      await appState.deletePlaylist(plB!);
+    });
+
     test('formatPlaylistDuration formats remaining queue time correctly', () {
       // 0 ms -> 0m
       expect(formatPlaylistDuration(0), '0m');
@@ -1167,5 +1226,454 @@ void main() {
         expect(find.byKey(const ValueKey('test_gradient')), findsOneWidget);
       });
     });
+
+    group('SleepTimerService Tests', () {
+      tearDown(() {
+        SleepTimerService.instance.cancel();
+      });
+
+      test('SleepTimerService start and cancel works as expected', () {
+        final timer = SleepTimerService.instance;
+        expect(timer.isActive, isFalse);
+        expect(timer.isEndOfSong, isFalse);
+
+        timer.start(const Duration(minutes: 15));
+        expect(timer.isActive, isTrue);
+        expect(timer.isEndOfSong, isFalse);
+        expect(timer.remaining, isNotNull);
+        expect(timer.remaining!.inMinutes, 14); // Between 14 and 15 min remaining
+
+        timer.cancel();
+        expect(timer.isActive, isFalse);
+        expect(timer.isEndOfSong, isFalse);
+        expect(timer.remaining, isNull);
+      });
+
+      test('SleepTimerService startForEndOfSong sets end of song mode', () {
+        final timer = SleepTimerService.instance;
+        expect(timer.isActive, isFalse);
+
+        timer.startForEndOfSong();
+        expect(timer.isActive, isTrue);
+        expect(timer.isEndOfSong, isTrue);
+
+        timer.cancel();
+        expect(timer.isActive, isFalse);
+        expect(timer.isEndOfSong, isFalse);
+      });
+    });
+
+    testWidgets('buildBottomBarsGutter creates 1.5 cards equivalent gutter height (120px)', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CustomScrollView(
+              slivers: [
+                Builder(
+                  builder: (context) => buildBottomBarsGutter(context),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      final sizedBoxFinder = find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(SizedBox),
+      );
+      expect(sizedBoxFinder, findsOneWidget);
+      final sizedBox = tester.widget<SizedBox>(sizedBoxFinder);
+      expect(sizedBox.height, 120.0);
+    });
+
+    testWidgets('AppSearchView clicking outside search bar dismisses keyboard/focus', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: AppSearchView(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final searchBar = find.byType(SearchBar);
+      expect(searchBar, findsOneWidget);
+
+      // Tap outside the search bar
+      await tester.tapAt(const Offset(200, 400));
+      await tester.pumpAndSettle();
+
+      final primaryFocus = FocusManager.instance.primaryFocus;
+      expect(primaryFocus?.context?.widget is SearchBar, isFalse);
+    });
+
+    testWidgets('NowPlayingLandscapeView renders centered artwork and metadata with device insets', (tester) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('com.ryanheise.just_audio.methods'),
+        (call) async {
+          if (call.method == 'init') return {'id': 'test-player'};
+          return {};
+        },
+      );
+
+      final player = AudioPlayer();
+      final song = SongModel({
+        '_id': 999,
+        'title': 'Stargazing Night',
+        'artist': 'Luna Eclipse',
+        'album': 'Constellations',
+      });
+
+      tester.view.physicalSize = const Size(800, 400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        player.dispose();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(800, 400),
+              padding: EdgeInsets.fromLTRB(40, 0, 40, 16),
+            ),
+            child: Scaffold(
+              body: NowPlayingLandscapeView(
+                isDark: true,
+                textColor: Colors.white,
+                textColorSecondary: Colors.white70,
+                iconBgColor: Colors.white12,
+                iconFgColor: Colors.white,
+                primaryColor: Colors.deepPurple,
+                displayedSong: song,
+                player: player,
+                artworkPulseAnimation: const AlwaysStoppedAnimation(1.0),
+                controlsVisible: false,
+                onToggleControls: () {},
+                artworkPageViewBuilder: (side) => Container(
+                  key: const ValueKey('art-box'),
+                  width: side,
+                  height: side,
+                  color: Colors.blue,
+                ),
+                lyricsView: const Text('Lyrics Panel View'),
+                onOpenArtist: () {},
+                onOpenAlbum: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Stargazing Night'), findsOneWidget);
+      expect(find.text('Luna Eclipse'), findsOneWidget);
+      expect(find.text('Constellations'), findsOneWidget);
+      expect(find.text('Lyrics Panel View'), findsOneWidget);
+      expect(find.byKey(const ValueKey('art-box')), findsOneWidget);
+
+      final titleText = tester.widget<Text>(find.text('Stargazing Night'));
+      expect(titleText.textAlign, TextAlign.center);
+    });
+
+    test('writeMp3Id3TextFrames and readMp3Id3TextFrames writes and reads TCOM (composer) and TEXT (lyricist)', () async {
+      final tempDir = await Directory.systemTemp.createTemp('id3_text_test_');
+      final mp3File = File('${tempDir.path}/test_text.mp3');
+
+      // 10-byte ID3v2 header: "ID3", version 2.3.0, flags 0, tag size 128 synchsafe
+      final header = [
+        0x49, 0x44, 0x33, // "ID3"
+        0x03, 0x00,       // v2.3.0
+        0x00,             // flags
+        0x00, 0x00, 0x01, 0x00 // tag size: 128 bytes
+      ];
+      final tit2Data = utf8.encode('Test Song');
+      final tit2Frame = [
+        ...ascii.encode('TIT2'),
+        0x00, 0x00, 0x00, tit2Data.length + 1,
+        0x00, 0x00,
+        0x03, // UTF-8 encoding flag
+        ...tit2Data,
+      ];
+      final padding = List<int>.filled(128 - tit2Frame.length, 0);
+      final audioData = List<int>.filled(64, 0xFF);
+
+      await mp3File.writeAsBytes([...header, ...tit2Frame, ...padding, ...audioData]);
+
+      // Write composer and lyricist
+      await writeMp3Id3TextFrames(
+        mp3File.path,
+        composer: 'Ludwig van Beethoven',
+        lyricist: 'Friedrich Schiller',
+      );
+
+      // Read back
+      final tags = await readMp3Id3TextFrames(mp3File.path, const ['TCOM', 'TEXT']);
+      expect(tags['TCOM'], 'Ludwig van Beethoven');
+      expect(tags['TEXT'], 'Friedrich Schiller');
+
+      // Update composer
+      await writeMp3Id3TextFrames(
+        mp3File.path,
+        composer: 'Wolfgang Amadeus Mozart',
+      );
+
+      final updatedTags = await readMp3Id3TextFrames(mp3File.path, const ['TCOM', 'TEXT']);
+      expect(updatedTags['TCOM'], 'Wolfgang Amadeus Mozart');
+      expect(updatedTags['TEXT'], 'Friedrich Schiller');
+
+      await tempDir.delete(recursive: true);
+    });
+
+    testWidgets('AppSortBottomSheet displays song sort options and selects', (tester) async {
+      SortMode? selectedMode;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () {
+                  showSongSortBottomSheet(
+                    context,
+                    currentSort: SortMode.artist,
+                    onSortSelected: (mode) {
+                      selectedMode = mode;
+                    },
+                  );
+                },
+                child: const Text('Open Sort'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Sort'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sort Library'), findsOneWidget);
+      expect(find.text('Track Artist'), findsOneWidget);
+      expect(find.text('Album Artist'), findsOneWidget);
+      expect(find.text('Release Year'), findsOneWidget);
+      expect(find.text('Album Artist & Year'), findsOneWidget);
+
+      // Tap 'Release Year'
+      await tester.tap(find.text('Release Year'));
+      await tester.pumpAndSettle();
+
+      expect(selectedMode, SortMode.year);
+      // Bottom sheet is closed
+      expect(find.text('Sort Library'), findsNothing);
+    });
+
+    testWidgets('AppSortBottomSheet displays album sort categories and selects', (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      AlbumsSort? selectedSort;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () {
+                  showAlbumsSortBottomSheet(
+                    context,
+                    currentSort: AlbumsSort.titleAsc,
+                    onSortSelected: (mode) {
+                      selectedSort = mode;
+                    },
+                  );
+                },
+                child: const Text('Open Album Sort'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Album Sort'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sort Albums'), findsOneWidget);
+      expect(find.text('TITLE'), findsOneWidget);
+      expect(find.text('ARTIST'), findsOneWidget);
+      expect(find.text('RELEASE YEAR'), findsOneWidget);
+      expect(find.text('TRACK COUNT'), findsOneWidget);
+
+      // Tap 'Most tracks first'
+      await tester.tap(find.text('Most tracks first'));
+      await tester.pumpAndSettle();
+
+      expect(selectedSort, AlbumsSort.mostTracks);
+      expect(find.text('Sort Albums'), findsNothing);
+    });
+
+    testWidgets('SongInfoSheet renders all details, tags, timestamps, and playback stats', (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final song = SongModel({
+        '_id': 8888,
+        'title': 'Stargazer Odyssey',
+        'artist': 'Galactic Groove',
+        'album': 'Cosmic Echoes',
+        'album_artist': 'Galactic Groove',
+        'composer': 'Maestro Star',
+        'genre': 'Space Synth',
+        'year': 2024,
+        'track': 4,
+        'duration': 245000,
+        '_size': 8388608,
+        '_data': '/storage/emulated/0/Music/stargazer_odyssey.flac',
+        'date_added': 1700000000,
+      });
+
+      playbackController.setPlayHistoryForTesting(
+        counts: {8888: 42},
+        lastPlayedMs: {8888: 1710000000000},
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => showSongInfoSheet(context, song),
+                child: const Text('Open Song Info'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Song Info'));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Copy all details'), findsOneWidget);
+      expect(find.text('FILE INFORMATION'), findsOneWidget);
+      expect(find.text('TAGS & METADATA'), findsOneWidget);
+      expect(find.text('TIMESTAMPS'), findsOneWidget);
+      expect(find.text('PLAYBACK STATISTICS'), findsOneWidget);
+      expect(find.text('Stargazer Odyssey'), findsWidgets);
+      expect(find.text('Galactic Groove'), findsWidgets);
+      expect(find.text('Cosmic Echoes'), findsWidgets);
+      expect(find.text('stargazer_odyssey.flac'), findsOneWidget);
+      expect(find.text('42 plays'), findsOneWidget);
+    });
+
+    test('AppStateController locked date added preserves original date across tag edits', () async {
+      final appState = AppStateController.instance;
+      await appState.loadLockedDateAddedPreferences();
+
+      const songPath = '/music/test_lock_song.mp3';
+      const initialAddedMs = 1680000000000;
+
+      appState.lockSongDateAdded(
+        songPath,
+        7777,
+        initialAddedMs,
+      );
+
+      final songBeforeEdit = SongModel({
+        '_id': 7777,
+        '_data': songPath,
+        'date_added': 1680000000, // seconds
+      });
+
+      expect(appState.dateAddedForSong(songBeforeEdit), initialAddedMs);
+
+      // Simulate a tag edit or file scanner that sees a brand-new modified/added timestamp
+      final songAfterEdit = SongModel({
+        '_id': 7777,
+        '_data': songPath,
+        'date_added': 1720000000, // modified/resynced timestamp seconds
+      });
+
+      // The locked date added must be strictly preserved!
+      expect(appState.dateAddedForSong(songAfterEdit), initialAddedMs);
+    });
+
+    testWidgets('SmartPlaylistPage Most Played limit switcher and play count display', (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final songs = List.generate(25, (i) {
+        return SongModel({
+          '_id': 1000 + i,
+          'title': 'Track ${i + 1}',
+          'artist': 'Artist ${i + 1}',
+          'duration': 180000,
+          '_data': '/music/track_${i + 1}.mp3',
+        });
+      });
+
+      playbackController.setPlayHistoryForTesting(
+        counts: {for (var i = 0; i < songs.length; i++) songs[i].id: 50 - i},
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SmartPlaylistPage(
+            player: playbackController.player,
+            title: 'Most played',
+            description: 'Your top tracks',
+            icon: Icons.local_fire_department_rounded,
+            songs: songs,
+            kind: SmartPlaylistKind.mostPlayed,
+            librarySongs: songs,
+            onQueueChanged: (_) {},
+            selectedTabIndex: 3,
+            onNavigateTab: (_) {},
+            onOpenNowPlaying: (_) {},
+            onPlayAll: () async {},
+            onPlaySong: (_) async {},
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Limit switcher segments
+      expect(find.text('Top 10'), findsOneWidget);
+      expect(find.text('Top 20'), findsOneWidget);
+      expect(find.text('Top 50'), findsOneWidget);
+      expect(find.text('Top 100'), findsOneWidget);
+
+      // Song tile subtitle contains play count
+      expect(find.textContaining('50 plays'), findsOneWidget);
+
+      // Default limit is 50, so all 25 songs are included
+      expect(find.textContaining('25 tracks'), findsOneWidget);
+      expect(find.text('Track 1'), findsOneWidget);
+      expect(find.text('Track 5'), findsOneWidget);
+
+      // Switch to Top 10
+      await tester.tap(find.text('Top 10'));
+      await tester.pumpAndSettle();
+
+      // Top 10 songs limit applied
+      expect(find.textContaining('10 tracks'), findsOneWidget);
+      expect(find.text('Track 1'), findsOneWidget);
+      expect(find.text('Track 5'), findsOneWidget);
+      expect(find.text('Track 15'), findsNothing);
+    });
   });
 }
+

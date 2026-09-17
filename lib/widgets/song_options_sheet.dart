@@ -7,6 +7,7 @@ import '../ui/shared/app_action_sheet.dart';
 import '../ui/shared/fast_artwork_widget.dart';
 import '../dialogs/tag_editor_dialog.dart';
 import '../dialogs/lyrics_editor_dialog.dart';
+import '../dialogs/song_info_dialog.dart';
 
 Future<void> showSongOptionsSheet({
   required BuildContext context,
@@ -139,6 +140,17 @@ Future<void> showSongOptionsSheet({
             ),
         ],
       ),
+    AppActionSection(
+      title: 'Details',
+      items: [
+        AppActionItem(
+          icon: Icons.info_outline_rounded,
+          title: 'Song info',
+          subtitle: 'File details, tags, and timestamps',
+          onTap: () => showSongInfoSheet(context, song),
+        ),
+      ],
+    ),
     AppActionSection(
       title: 'Edit',
       items: [

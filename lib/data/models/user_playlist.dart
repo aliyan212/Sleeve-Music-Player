@@ -1,6 +1,9 @@
 
 
 class UserPlaylist {
+  static const String likedSongsPlaylistId = 'liked_songs';
+  static const String likedSongsPlaylistName = 'Liked Songs';
+
   const UserPlaylist({
     required this.id,
     required this.name,
@@ -94,6 +97,6 @@ class UserPlaylist {
   }
 }
 
-enum SmartPlaylistKind { mostPlayed, recentlyPlayed, recentlyAdded }
+enum SmartPlaylistKind { mostPlayed, recentlyPlayed, recentlyAdded, lovedSongs }
 
 enum UserPlaylistAction { rename, delete }

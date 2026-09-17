@@ -684,6 +684,24 @@ class PlaybackController {
     onPlayHistoryUpdated?.call();
   }
 
+  @visibleForTesting
+  void setPlayHistoryForTesting({
+    Map<int, int>? counts,
+    Map<int, int>? lastPlayedMs,
+  }) {
+    if (counts != null) {
+      _playCountBySongId
+        ..clear()
+        ..addAll(counts);
+    }
+    if (lastPlayedMs != null) {
+      _lastPlayedMsBySongId
+        ..clear()
+        ..addAll(lastPlayedMs);
+    }
+    onPlayHistoryUpdated?.call();
+  }
+
   Map<int, int> _extractIntMap(dynamic raw) {
     if (raw == null) return <int, int>{};
     Map<dynamic, dynamic> map;

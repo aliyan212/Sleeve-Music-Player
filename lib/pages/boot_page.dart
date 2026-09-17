@@ -7,6 +7,8 @@ import '../app_audio_handler.dart';
 import '../main.dart';
 import '../platform_exit.dart';
 import '../services/app_local_store.dart';
+import '../services/loved_songs_service.dart';
+
 import '../services/playback_controller.dart';
 
 class BootApp extends StatefulWidget {
@@ -33,6 +35,7 @@ class _BootAppState extends State<BootApp> {
       // platform/plugin initialization in main().
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       await AppLocalStore.instance.init();
+      await LovedSongsService.instance.init();
 
       // Ensure audio_service initialization is only attempted once.
       if (audioHandler == null) {

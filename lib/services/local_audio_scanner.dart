@@ -192,14 +192,16 @@ class LocalAudioScanner {
            
            final albumId = song.albumId ?? 0;
            albumSongsMap.putIfAbsent(albumId, () => []).add(song);
-         } else {
-           uncached.add({
-             'path': filePath,
-             'modified': lastModified,
-             'size': fileSize,
-             'dateAdded': fileStat.changed.millisecondsSinceEpoch,
-           });
-         }
+          } else {
+            final existingMeta = cached is Map && cached['meta'] is Map ? cached['meta'] as Map : null;
+            final existingDateAdded = existingMeta != null ? existingMeta['date_added'] : null;
+            uncached.add({
+              'path': filePath,
+              'modified': lastModified,
+              'size': fileSize,
+              'dateAdded': existingDateAdded ?? fileStat.modified.millisecondsSinceEpoch,
+            });
+          }
       }
 
       if (uncached.isNotEmpty) {

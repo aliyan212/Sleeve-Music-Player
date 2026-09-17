@@ -10,6 +10,7 @@ import '../../ui/shared/alphabetical_bubble_scroller.dart';
 import '../../ui/shared/app_empty_state.dart';
 import '../../utils/song_sort_utils.dart';
 import '../../widgets/search/app_search_view.dart';
+import '../../ui/shared/app_sort_bottom_sheet.dart';
 
 class AlbumArtistsTab extends StatefulWidget {
   const AlbumArtistsTab({super.key});
@@ -108,41 +109,18 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
                     appState.openSearch(initialFilter: SearchFilter.artists);
                   },
                 ),
-                PopupMenuButton<AlbumArtistsSort>(
+                IconButton(
                   icon: const Icon(Icons.sort_rounded),
-                  tooltip: 'Sort',
-                  initialValue: albumArtistsSort,
-                  onSelected: (mode) {
-                    HapticFeedback.selectionClick();
-                    appState.applyAlbumArtistsSort(mode);
+                  tooltip: 'Sort album artists',
+                  onPressed: () {
+                    showAlbumArtistsSortBottomSheet(
+                      context,
+                      currentSort: albumArtistsSort,
+                      onSortSelected: (mode) {
+                        appState.applyAlbumArtistsSort(mode);
+                      },
+                    );
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(
-                      value: AlbumArtistsSort.nameAsc,
-                      child: Text('Name (A → Z)'),
-                    ),
-                    PopupMenuItem(
-                      value: AlbumArtistsSort.nameDesc,
-                      child: Text('Name (Z → A)'),
-                    ),
-                    PopupMenuDivider(),
-                    PopupMenuItem(
-                      value: AlbumArtistsSort.mostAlbums,
-                      child: Text('Most Albums'),
-                    ),
-                    PopupMenuItem(
-                      value: AlbumArtistsSort.leastAlbums,
-                      child: Text('Least Albums'),
-                    ),
-                    PopupMenuItem(
-                      value: AlbumArtistsSort.mostTracks,
-                      child: Text('Most Tracks'),
-                    ),
-                    PopupMenuItem(
-                      value: AlbumArtistsSort.leastTracks,
-                      child: Text('Least Tracks'),
-                    ),
-                  ],
                 ),
                 const SizedBox(width: 4),
               ],
@@ -191,7 +169,7 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
                           borderRadius: BorderRadius.circular(20),
                           onTap: () {
                             HapticFeedback.selectionClick();
-                            appState.openArtistPageByName(stat.name);
+                            appState.openArtistPageByName(context, stat.name);
                           },
                           onLongPress: () {
                             HapticFeedback.mediumImpact();
@@ -345,7 +323,7 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
           icon: Icons.person_rounded,
           title: 'Open Artist',
           subtitle: 'View albums and tracks by this artist',
-          onTap: () => appState.openArtistPageByName(stat.name),
+          onTap: () => appState.openArtistPageByName(context, stat.name),
         ),
         AppActionItem(
           icon: Icons.play_arrow_rounded,
@@ -354,7 +332,7 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
           onTap: () async {
             final artistSongs = getArtistSongs();
             if (artistSongs.isNotEmpty) {
-              await appState.playFromQueue(artistSongs, initialIndex: 0);
+              await appState.playFromQueue(context, artistSongs, initialIndex: 0);
             }
           },
         ),
@@ -365,7 +343,7 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
           onTap: () async {
             final artistSongs = getArtistSongs();
             if (artistSongs.isNotEmpty) {
-              await appState.insertAllInQueue(artistSongs);
+              await appState.insertAllInQueue(context, artistSongs);
             }
           },
         ),
@@ -376,7 +354,7 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
           onTap: () async {
             final artistSongs = getArtistSongs();
             if (artistSongs.isNotEmpty) {
-              await appState.addAllToQueueEnd(artistSongs);
+              await appState.addAllToQueueEnd(context, artistSongs);
             }
           },
         ),
@@ -388,7 +366,7 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
             final artistSongs = getArtistSongs();
             if (artistSongs.isNotEmpty) {
               artistSongs.shuffle();
-              await appState.playFromQueue(artistSongs, initialIndex: 0);
+              await appState.playFromQueue(context, artistSongs, initialIndex: 0);
             }
           },
         ),

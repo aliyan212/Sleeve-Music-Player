@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../ui/shared/bouncy_pressable.dart';
+
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -56,12 +58,13 @@ class NowPlayingTransport extends StatelessWidget {
           shape: const CircleBorder(),
           elevation: onPressed == null ? 0 : 3,
           shadowColor: isActive ? mainShadow : sideShadow,
-          child: InkWell(
-            onTap: onPressed,
-            customBorder: const CircleBorder(),
-            child: SizedBox(
+          child: BouncyPressable(
+            onPressed: onPressed,
+            enableHaptic: false, // Haptic is handled inside BouncyPressable if we don't pass false, but the existing code has HapticFeedback calls. Let's let BouncyPressable handle it, or remove the existing ones. Actually, the original code had HapticFeedback inside the onPressed callback. So we'll disable BouncyPressable's haptic or remove the ones in callbacks. Let's just disable it here to keep it simple.
+            child: Container(
               width: 56,
               height: 56,
+              decoration: const BoxDecoration(shape: BoxShape.circle),
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -140,10 +143,8 @@ class NowPlayingTransport extends StatelessWidget {
                   shape: const CircleBorder(),
                   elevation: 8,
                   shadowColor: mainShadow,
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () async {
-                      HapticFeedback.lightImpact();
+                  child: BouncyPressable(
+                    onPressed: () async {
                       if (playing) {
                         await player.pause();
                       } else {
@@ -154,15 +155,18 @@ class NowPlayingTransport extends StatelessWidget {
                         await onPlayPressed();
                       }
                     },
-                    child: SizedBox(
+                    child: Container(
                       width: 74,
                       height: 74,
-                      child: Icon(
-                        playing
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        size: 38,
-                        color: scheme.onPrimary,
+                      decoration: const BoxDecoration(shape: BoxShape.circle),
+                      child: Center(
+                        child: Icon(
+                          playing
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          size: 38,
+                          color: scheme.onPrimary,
+                        ),
                       ),
                     ),
                   ),

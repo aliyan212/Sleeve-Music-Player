@@ -18,9 +18,9 @@ Widget buildBottomBarsGutter(
   bool includeMiniPlayer = true,
   double extraPadding = 0,
 }) {
-  // Gutter space set to 2.5 cards height (standard card is 80px -> 200px total).
+  // Gutter space set to 1.5 cards height (standard card is 80px -> 120px total).
   const double cardHeight = 80.0;
-  const double gutterHeight = cardHeight * 2.5;
+  const double gutterHeight = cardHeight * 1.5;
   return SliverToBoxAdapter(
     child: SizedBox(height: gutterHeight + extraPadding),
   );
@@ -39,6 +39,8 @@ Widget buildDetailBottomBars({
 }) {
   final cs = Theme.of(context).colorScheme;
   final isDark = Theme.of(context).brightness == Brightness.dark;
+  final bottomInset = MediaQuery.of(context).padding.bottom;
+  final bottomMargin = bottomInset > 0 ? 4.0 : 10.0;
   return Column(
     mainAxisSize: MainAxisSize.min,
     children: [
@@ -50,51 +52,65 @@ Widget buildDetailBottomBars({
         onTap: onOpenNowPlaying,
         enableHero: enableHero,
       ),
-      ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
-            decoration: BoxDecoration(
-              color: cs.surface.withValues(alpha: isDark ? 0.82 : 0.90),
-              border: Border(
-                top: BorderSide(
-                  color: cs.outlineVariant.withValues(alpha: 0.18),
-                  width: 0.5,
-                ),
+      SafeArea(
+        top: false,
+        child: Container(
+          margin: EdgeInsets.fromLTRB(16, 0, 16, bottomMargin),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
               ),
-            ),
-            child: SafeArea(
-              top: false,
-              minimum: const EdgeInsets.only(bottom: 6),
-              child: NavigationBar(
-                selectedIndex: selectedTabIndex,
-                onDestinationSelected: (index) {
-                  HapticFeedback.selectionClick();
-                  onNavigateTab(index);
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                },
-                destinations: const [
-                  NavigationDestination(
-                    icon: Icon(Icons.home_outlined),
-                    selectedIcon: Icon(Icons.home_rounded),
-                    label: 'Home',
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: cs.surface.withValues(alpha: isDark ? 0.82 : 0.90),
+                  border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.18),
+                    width: 0.5,
                   ),
-                  NavigationDestination(
-                    icon: Icon(Icons.album_outlined),
-                    selectedIcon: Icon(Icons.album_rounded),
-                    label: 'Albums',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.people_outline_rounded),
-                    selectedIcon: Icon(Icons.people_rounded),
-                    label: 'Album Artists',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.queue_music_outlined),
-                    selectedIcon: Icon(Icons.queue_music_rounded),
-                    label: 'Playlists',
-                  ),
-                ],
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: NavigationBar(
+                  elevation: 0,
+                  backgroundColor: Colors.transparent,
+                  selectedIndex: selectedTabIndex,
+                  onDestinationSelected: (index) {
+                    HapticFeedback.selectionClick();
+                    onNavigateTab(index);
+                    Navigator.of(context).popUntil((route) => route.isFirst);
+                  },
+                  destinations: const [
+                    NavigationDestination(
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home_rounded),
+                      label: 'Home',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.album_outlined),
+                      selectedIcon: Icon(Icons.album_rounded),
+                      label: 'Albums',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.people_outline_rounded),
+                      selectedIcon: Icon(Icons.people_rounded),
+                      label: 'Album Artists',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.queue_music_outlined),
+                      selectedIcon: Icon(Icons.queue_music_rounded),
+                      label: 'Playlists',
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

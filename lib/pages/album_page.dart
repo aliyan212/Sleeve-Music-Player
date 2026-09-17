@@ -325,7 +325,7 @@ class AlbumPage extends StatefulWidget {
                             },
                             onLongPress: () {
                               HapticFeedback.selectionClick();
-                              AppStateController.instance.showSongOptions(song, i);
+                              AppStateController.instance.showSongOptions(context, song, i);
                             },
                           ),
                         );
@@ -473,7 +473,7 @@ class AlbumPage extends StatefulWidget {
                                     onTap: () {
                                       HapticFeedback.selectionClick();
                                       if (currentSongs.isNotEmpty) {
-                                        AppStateController.instance.openArtistPageFromSong(currentSongs.first);
+                                        AppStateController.instance.openArtistPageFromSong(context, currentSongs.first);
                                       }
                                     },
                                     child: Padding(

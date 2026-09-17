@@ -60,6 +60,11 @@ class SmartPlaylistHelper {
           description: 'Tracks added in the last 30 days',
           icon: Icons.new_releases_rounded,
         ),
+      SmartPlaylistKind.lovedSongs => (
+          title: 'Loved Songs',
+          description: 'Songs you have liked',
+          icon: Icons.favorite_rounded,
+        ),
     };
   }
 }

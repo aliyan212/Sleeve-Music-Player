@@ -786,23 +786,43 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                               : Colors.transparent,
                           surfaceTintColor: Colors.transparent,
                           foregroundColor: cs.onSurface,
-                  leading: widget.embeddedInHome
+                  leading: _isSearching
                       ? IconButton(
                           tooltip: 'Back',
                           icon: const Icon(Icons.arrow_back_rounded),
-                          onPressed: widget.onClose,
+                          onPressed: () {
+                            FocusScope.of(context).unfocus();
+                            setState(() {
+                              _isSearching = false;
+                              _searchController.clear();
+                              _searchQuery = '';
+                            });
+                          },
                         )
-                      : (Navigator.canPop(context)
+                      : (widget.embeddedInHome
                           ? IconButton(
                               tooltip: 'Back',
                               icon: const Icon(Icons.arrow_back_rounded),
-                              onPressed: () => Navigator.pop(context),
+                              onPressed: () {
+                                FocusScope.of(context).unfocus();
+                                widget.onClose?.call();
+                              },
                             )
-                          : null),
+                          : (Navigator.canPop(context)
+                              ? IconButton(
+                                  tooltip: 'Back',
+                                  icon: const Icon(Icons.arrow_back_rounded),
+                                  onPressed: () {
+                                    FocusScope.of(context).unfocus();
+                                    Navigator.pop(context);
+                                  },
+                                )
+                              : null)),
                   title: _isSearching
                       ? TextField(
                           controller: _searchController,
                           autofocus: true,
+                          onTapOutside: (_) => FocusScope.of(context).unfocus(),
                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                             color: cs.onSurface,
                           ),
@@ -839,6 +859,7 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
                         tooltip: 'Clear search',
                         icon: const Icon(Icons.close_rounded),
                         onPressed: () {
+                          FocusScope.of(context).unfocus();
                           setState(() {
                             _isSearching = false;
                             _searchController.clear();

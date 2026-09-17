@@ -15,25 +15,24 @@ import '../playback_controller.dart';
 /// audio playback suspension during file writes, and song options sheet.
 mixin TagEditorStateMixin on ChangeNotifier {
   // Dependencies satisfied by AppStateController or NavigationStateMixin:
-  BuildContext get context;
   List<SongModel> get songs;
   set songs(List<SongModel> value);
   void recomputeAllData();
   void enterSelectionMode({int? initialSongId});
-  Future<void> openNowPlaying(SongModel song);
-  void openAlbumPageFromSong(SongModel song);
-  void openArtistPageFromSong(SongModel song);
+  Future<void> openNowPlaying(BuildContext context, SongModel song);
+  void openAlbumPageFromSong(BuildContext context, SongModel song);
+  void openArtistPageFromSong(BuildContext context, SongModel song);
 
-  void showSongOptions(SongModel song, int index) {
+  void showSongOptions(BuildContext context, SongModel song, int index) {
     showSongOptionsSheet(
       context: context,
       song: song,
       index: index,
       onEnterSelectionMode: (songId) =>
           enterSelectionMode(initialSongId: songId),
-      onOpenNowPlaying: openNowPlaying,
-      onOpenAlbum: openAlbumPageFromSong,
-      onOpenArtist: openArtistPageFromSong,
+      onOpenNowPlaying: (s) => openNowPlaying(context, s),
+      onOpenAlbum: (s) => openAlbumPageFromSong(context, s),
+      onOpenArtist: (s) => openArtistPageFromSong(context, s),
       onSongUpdated: updateSongMetadataInPlace,
       runWithPlaybackSuspended: runWithPlaybackSuspendedForTagWrite,
       onPlaySong: () => playbackController.playSong(index),
