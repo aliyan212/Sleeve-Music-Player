@@ -4,7 +4,7 @@
 > Sleeve honors the album art, liner notes, and the tactile feel of physical music libraries.
 
 <p align="center">
-  <img src="assets/branding/sleeve_icon_512.png" alt="Sleeve Music Player app icon" width="128" style="border-radius: 28px;" />
+  <img src="assets/branding/sleeve_icon_512.png" alt="Sleeve Music Player app icon" width="128" />
 </p>
 
 ---
