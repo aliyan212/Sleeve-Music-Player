@@ -165,7 +165,7 @@ class MyApp extends StatelessWidget {
                 );
               },
               child: MaterialApp.router(
-                title: 'Expressive Music',
+                title: 'Sleeve Music Player',
                 themeMode: themeMode,
                 debugShowCheckedModeBanner: false,
                 routerConfig: appRouter,

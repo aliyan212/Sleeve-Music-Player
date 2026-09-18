@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Sleeve System: Optical center at (54, 54) for Material You dynamic theming -->
+    <!-- 1. Back Sleeve Jacket -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.30"
+        android:pathData="M 33,28 L 73,28 A 4,4 0 0,1 77,32 L 77,72 A 4,4 0 0,1 73,76 L 33,76 A 4,4 0 0,1 29,72 L 29,32 A 4,4 0 0,1 33,28 Z" />
+
+    <!-- 2. Vinyl Disc (Right peek) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.75"
+        android:pathData="M 68,52 m -21,0 a 21,21 0 1,0 42,0 a 21,21 0 1,0 -42,0" />
+
+    <!-- Vinyl Grooves -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.4"
+        android:strokeWidth="0.5"
+        android:pathData="M 68,52 m -18,0 a 18,18 0 1,0 36,0 a 18,18 0 1,0 -36,0" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.35"
+        android:strokeWidth="0.5"
+        android:pathData="M 68,52 m -14,0 a 14,14 0 1,0 28,0 a 14,14 0 1,0 -28,0" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.4"
+        android:strokeWidth="0.5"
+        android:pathData="M 68,52 m -10,0 a 10,10 0 1,0 20,0 a 10,10 0 1,0 -20,0" />
+
+    <!-- Vinyl Center Label -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="1.0"
+        android:pathData="M 68,52 m -7.5,0 a 7.5,7.5 0 1,0 15,0 a 7.5,7.5 0 1,0 -15,0" />
+
+    <!-- Center Spindle Hole (transparent cutout) -->
+    <path
+        android:fillColor="#000000"
+        android:fillAlpha="1.0"
+        android:pathData="M 68,52 m -2.5,0 a 2.5,2.5 0 1,0 5,0 a 2.5,2.5 0 1,0 -5,0" />
+
+    <!-- 3. Front Sleeve Jacket with thumb cutout -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.95"
+        android:pathData="M 31,32 L 69,32 A 4,4 0 0,1 73,36 L 73,46 A 6,6 0 0,0 73,58 L 73,74 A 4,4 0 0,1 69,78 L 31,78 A 4,4 0 0,1 27,74 L 27,36 A 4,4 0 0,1 31,32 Z" />
+
+    <!-- Front Cover Minimal Graphic Bar & Play Accent -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.4"
+        android:pathData="M 33,38 L 40,38 A 0.8,0.8 0 0,1 40,39.6 L 33,39.6 A 0.8,0.8 0 0,1 33,38 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.7"
+        android:pathData="M 58,69 L 58,73 L 62,71 Z" />
+</vector>

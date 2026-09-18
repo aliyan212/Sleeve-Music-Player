@@ -1,21 +1,22 @@
-# Kool Music Player
+# Sleeve Music Player
 
-A sleek Flutter music player built for **offline, on-device listening** with a fast library experience and clean playback controls.
+> **Local music isn’t streaming noise; it’s a personal collection you own and curate.**  
+> Sleeve honors the album art, liner notes, and the tactile feel of physical music libraries.
 
 <p align="center">
-  <img src="android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Kool Music Player app icon" width="120" />
+  <img src="assets/branding/sleeve_icon_512.png" alt="Sleeve Music Player app icon" width="128" style="border-radius: 28px;" />
 </p>
 
 ---
 
 ## What this project is
 
-Kool Music Player scans local audio files and turns them into a polished listening experience focused on:
+**Sleeve Music Player** scans local audio files and turns them into a polished, tactile listening experience focused on:
 
-- quick navigation through large libraries
+- quick navigation through large personal music libraries
 - stable playback with queue support
-- lyrics and metadata editing
-- modern visuals with dynamic theming
+- synchronized lyrics and metadata editing
+- modern, editorial visuals with dynamic theming and tactile physical aesthetics
 
 It is designed primarily for Android, with support for other Flutter targets where platform capabilities allow.
 

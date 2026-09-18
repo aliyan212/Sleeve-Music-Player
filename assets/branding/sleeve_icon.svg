@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Tactile drop shadows -->
+    <filter id="backShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#070709" flood-opacity="0.55" />
+    </filter>
+    <filter id="frontShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="3" dy="8" stdDeviation="12" flood-color="#0A0A0D" flood-opacity="0.4" />
+    </filter>
+    <filter id="discShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="4" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.35" />
+    </filter>
+
+    <!-- Front sleeve thumb cutout notch mask -->
+    <mask id="thumbCutoutMask">
+      <rect width="512" height="512" fill="white" />
+      <circle cx="350" cy="256" r="38" fill="black" />
+    </mask>
+
+    <!-- Paper gradients -->
+    <linearGradient id="frontPaper" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#FAF6F0" />
+      <stop offset="60%" stop-color="#F4EFEA" />
+      <stop offset="100%" stop-color="#EAE3D9" />
+    </linearGradient>
+
+    <linearGradient id="backPaper" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D9D0C3" />
+      <stop offset="100%" stop-color="#C2B5A5" />
+    </linearGradient>
+
+    <!-- Terracotta accent gradient -->
+    <linearGradient id="terracottaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EA765C" />
+      <stop offset="100%" stop-color="#D35F45" />
+    </linearGradient>
+
+    <!-- Vinyl Disc gradient -->
+    <linearGradient id="vinylGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#28282E" />
+      <stop offset="35%" stop-color="#1B1B1F" />
+      <stop offset="70%" stop-color="#141416" />
+      <stop offset="100%" stop-color="#101012" />
+    </linearGradient>
+
+    <!-- Anisotropic vinyl sheen reflex -->
+    <linearGradient id="vinylSheen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.08" />
+      <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0.0" />
+      <stop offset="55%" stop-color="#FFFFFF" stop-opacity="0.0" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.06" />
+    </linearGradient>
+  </defs>
+
+  <!-- Canvas Squircle (Warm Charcoal #1A1A1E) -->
+  <rect width="512" height="512" rx="116" fill="#1A1A1E" />
+  <rect width="510" height="510" x="1" y="1" rx="115" fill="none" stroke="#2B2B32" stroke-width="1.5" opacity="0.6" />
+
+  <!-- OPTICALLY CENTERED SLEEVE SYSTEM -->
+  <g transform="translate(-18, 0)">
+    <!-- 1. BACK SLEEVE JACKET -->
+    <rect x="146" y="126" width="224" height="224" rx="20"
+          fill="url(#backPaper)"
+          filter="url(#backShadow)" />
+
+    <!-- Inner dark jacket slot -->
+    <rect x="156" y="136" width="210" height="210" rx="16"
+          fill="#131316" opacity="0.9" />
+
+    <!-- 2. VINYL DISC -->
+    <g filter="url(#discShadow)">
+      <!-- Disc base -->
+      <circle cx="320" cy="242" r="108" fill="url(#vinylGrad)" />
+
+      <!-- Concentric Micro-Grooves -->
+      <circle cx="320" cy="242" r="102" fill="none" stroke="#2D2D34" stroke-width="1.2" opacity="0.6" />
+      <circle cx="320" cy="242" r="95" fill="none" stroke="#363640" stroke-width="1.2" opacity="0.75" />
+      <circle cx="320" cy="242" r="88" fill="none" stroke="#27272F" stroke-width="1.2" opacity="0.6" />
+      <circle cx="320" cy="242" r="80" fill="none" stroke="#3A3A46" stroke-width="1.4" opacity="0.7" />
+      <circle cx="320" cy="242" r="72" fill="none" stroke="#292931" stroke-width="1.2" opacity="0.6" />
+      <circle cx="320" cy="242" r="64" fill="none" stroke="#353540" stroke-width="1.2" opacity="0.7" />
+      <circle cx="320" cy="242" r="56" fill="none" stroke="#25252B" stroke-width="1.2" opacity="0.5" />
+      <circle cx="320" cy="242" r="48" fill="none" stroke="#32323D" stroke-width="1.2" opacity="0.6" />
+
+      <!-- Vinyl Sheen / Reflection -->
+      <circle cx="320" cy="242" r="108" fill="url(#vinylSheen)" />
+
+      <!-- Terracotta Center Label -->
+      <circle cx="320" cy="242" r="40" fill="url(#terracottaGrad)" />
+      <!-- Label detailing ring -->
+      <circle cx="320" cy="242" r="30" fill="none" stroke="#FAF6F0" stroke-width="1" opacity="0.3" />
+      <circle cx="320" cy="242" r="18" fill="none" stroke="#1A1A1E" stroke-width="1.5" opacity="0.25" />
+
+      <!-- Center Spindle Hole -->
+      <circle cx="320" cy="242" r="13" fill="#1A1A1E" />
+    </g>
+
+    <!-- 3. FRONT SLEEVE JACKET -->
+    <g filter="url(#frontShadow)">
+      <!-- Main Paper Body with Cutout Mask -->
+      <rect x="124" y="144" width="226" height="226" rx="20"
+            fill="url(#frontPaper)"
+            mask="url(#thumbCutoutMask)" />
+
+      <!-- Paper edge bevel / fine tactile rim -->
+      <rect x="125" y="145" width="224" height="224" rx="19"
+            fill="none" stroke="#FFFFFF" stroke-width="1.5" opacity="0.65"
+            mask="url(#thumbCutoutMask)" />
+
+      <!-- EDITORIAL ARTWORK ON SLEEVE COVER -->
+      <rect x="156" y="174" width="32" height="7" rx="3.5" fill="#E06D53" />
+      
+      <!-- Minimalist metadata bars -->
+      <rect x="156" y="189" width="16" height="2.5" rx="1.2" fill="#8F8578" opacity="0.55" />
+      <rect x="176" y="189" width="28" height="2.5" rx="1.2" fill="#8F8578" opacity="0.4" />
+      <rect x="208" y="189" width="20" height="2.5" rx="1.2" fill="#8F8578" opacity="0.45" />
+
+      <!-- Abstract embossed audio wave graphic -->
+      <path d="M 156 250 Q 170 236 184 250 T 212 250 T 240 250" 
+            fill="none" stroke="#D8CFC3" stroke-width="2.5" stroke-linecap="round" />
+      <path d="M 156 262 Q 170 252 184 262 T 212 262 T 232 262" 
+            fill="none" stroke="#E3DCD3" stroke-width="2" stroke-linecap="round" />
+
+      <!-- Clean editorial brand mark: SLEEVE -->
+      <text x="156" y="338" 
+            font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Helvetica Neue', sans-serif" 
+            font-size="14" 
+            font-weight="800" 
+            letter-spacing="4" 
+            fill="#282420">SLEEVE</text>
+            
+      <!-- Terracotta play triangle -->
+      <polygon points="274,328 274,340 285,334" fill="#E06D53" />
+    </g>
+  </g>
+</svg>
