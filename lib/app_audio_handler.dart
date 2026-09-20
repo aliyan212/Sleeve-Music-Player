@@ -38,8 +38,8 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
       // Some devices occasionally end up with "playing" state but a muted
       // output (often after focus/route changes). If our volume has ended up
-      // near-zero while playing, try a minimal recovery.
-      if (player.playing && !_ducked && player.volume <= 0.001) {
+      // below normal while playing, try a minimal recovery.
+      if (player.playing && !_ducked && player.volume < 0.1) {
         unawaited(_recoverFromStuckMuteIfNeeded());
       }
     });
@@ -55,6 +55,9 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     appIsForeground.addListener(() {
       if (appIsForeground.value && player.playing) {
         _broadcastState();
+        try {
+          unawaited(_setNormalVolume());
+        } catch (_) {}
       }
     });
 
@@ -112,8 +115,7 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   // ── Volume helpers ─────────────────────────────────────────────────
 
   Future<void> _setNormalVolume() async {
-    final v = _baselineVolume.clamp(0.0, 1.0);
-    if ((player.volume - v).abs() <= 0.001) return;
+    final v = _baselineVolume.clamp(0.05, 1.0);
     await player.setVolume(v);
   }
 
@@ -127,9 +129,13 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
     try {
       await _setNormalVolume();
-      if (player.playing && player.volume <= 0.001) {
+      if (player.playing) {
+        final pos = player.position;
         await player.pause();
-        unawaited(player.play());
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await player.seek(pos);
+        await _setNormalVolume();
+        await player.play();
       }
     } catch (_) {}
   }
@@ -199,7 +205,7 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
             usage: AndroidAudioUsage.media,
           ),
           androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-          androidWillPauseWhenDucked: false,
+          androidWillPauseWhenDucked: true,
         ),
       );
 
@@ -295,7 +301,13 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           _duckFailsafeTimer?.cancel();
           _duckFailsafeTimer = null;
           _setFocusState(AudioFocusState.gained);
-          await _setNormalVolume();
+          try {
+            await _setNormalVolume();
+          } catch (_) {}
+          try {
+            final pos = player.position;
+            await player.seek(pos);
+          } catch (_) {}
         }
         break;
 
@@ -307,9 +319,9 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
         if (shouldResume) {
           try {
-            // Give Android OS audio pipeline 250ms to switch hardware routes
+            // Give Android OS audio pipeline 350ms to switch hardware routes
             // (e.g., from VOICE_CALL/EARPIECE/SCO back to MEDIA/A2DP/SPEAKER).
-            await Future<void>.delayed(const Duration(milliseconds: 250));
+            await Future<void>.delayed(const Duration(milliseconds: 350));
             final active = await _session?.setActive(true);
             if (active == false) {
               await Future<void>.delayed(const Duration(milliseconds: 150));
@@ -319,11 +331,32 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           try {
             await _setNormalVolume();
           } catch (_) {}
+
+          // Flush AudioTrack pipeline:
+          // On Android, when route switching occurs (e.g., from VOICE_CALL or
+          // another media app back to media/speaker/A2DP), calling player.play()
+          // alone can cause ExoPlayer to write into an invalidated AudioTrack handle
+          // that AudioFlinger silently drops (causing elapsed progress with zero sound).
+          // Starting playback and then performing a quick active pause -> play cycle
+          // rebinds the native AudioTrack to the active media mixer, restoring audible
+          // sound automatically without requiring manual pause/play intervention.
           try {
-            unawaited(player.play());
+            await player.play();
             _lastPlaybackProgressAt = DateTime.now();
             _lastPlaybackPosition = player.position;
-          } catch (_) {}
+
+            await Future<void>.delayed(const Duration(milliseconds: 120));
+            if (player.playing) {
+              await player.pause();
+              await Future<void>.delayed(const Duration(milliseconds: 80));
+              await _setNormalVolume();
+              await player.play();
+            }
+          } catch (_) {
+            try {
+              unawaited(player.play());
+            } catch (_) {}
+          }
           _broadcastState();
         }
         break;
@@ -498,6 +531,10 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
+  void clearInterruptionResume() {
+    _playInterruptedByFocus = false;
+  }
+
   // ── Transport controls ─────────────────────────────────────────────
 
   @override
@@ -518,11 +555,13 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         await _session?.setActive(true);
       } catch (_) {}
     }
+    await _setNormalVolume();
     return player.play();
   }
 
   @override
   Future<void> pause() async {
+    _playInterruptedByFocus = false;
     await player.pause();
     try {
       await _session?.setActive(false);
@@ -531,6 +570,7 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> stop() async {
+    _playInterruptedByFocus = false;
     await player.stop();
     await playbackState.firstWhere(
       (s) => s.processingState == AudioProcessingState.idle,

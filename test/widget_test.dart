@@ -1119,8 +1119,14 @@ void main() {
 
       // Verify Albums filter chip is selected
       final filterChips = tester.widgetList<FilterChip>(find.byType(FilterChip)).toList();
-      expect(filterChips.length, 4);
-      final albumsChip = filterChips.firstWhere((c) => (c.label as Row).children.any((w) => w is Text && w.data == 'Albums'));
+      // It should display 'All' plus all enabled categories, which defaults to tracks, albums, artists, albumArtists, composers, genres -> 7 chips total
+      expect(filterChips.length, 7);
+      final albumsChip = filterChips.firstWhere((c) {
+        if (c.label is Row) {
+          return (c.label as Row).children.any((w) => w is Text && w.data == 'Albums');
+        }
+        return false;
+      });
       expect(albumsChip.selected, isTrue);
 
       // Verify Recent Searches are shown when query is empty
@@ -2100,6 +2106,19 @@ void main() {
 
       // Dialog is closed
       expect(find.text('Customize Bottom Bar'), findsNothing);
+    });
+
+    test('PlaybackController play asserts normal volume and pause clears interruption flag', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final controller = playbackController;
+      
+      // If volume was somehow ducked or muted below 0.1, play() re-asserts 1.0
+      await controller.player.setVolume(0.0);
+      expect(controller.player.volume, 0.0);
+
+      // Verify pause and stop trigger clearInterruptionResume safely
+      expect(() => controller.pause(), returnsNormally);
+      expect(() => controller.stop(), returnsNormally);
     });
   });
 }

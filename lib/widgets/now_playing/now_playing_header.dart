@@ -7,7 +7,6 @@ import '../../dialogs/tag_editor_dialog.dart';
 import '../../dialogs/lyrics_editor_dialog.dart';
 import 'package:just_audio/just_audio.dart';
 import '../../services/sleep_timer_service.dart';
-import '../../services/audio_routing_service.dart';
 import '../../dialogs/song_info_dialog.dart';
 
 
@@ -186,8 +185,6 @@ class NowPlayingHeader extends StatelessWidget {
                     }
                   } else if (value == 'sleep_timer') {
                     SleepTimerService.instance.showSleepTimerDialog(context);
-                  } else if (value == 'audio_output') {
-                    AudioRoutingService.showAudioOutputDialog(context);
                   } else if (value == 'edit_lyrics') {
                     final result = await showDialog<bool>(
                       context: context,
@@ -246,25 +243,6 @@ class NowPlayingHeader extends StatelessWidget {
                       ),
                     ),
                     if (!isFullscreenLandscape) ...[
-                      PopupMenuItem(
-                        value: 'audio_output',
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.speaker_group_rounded,
-                              size: 20,
-                              color: menuIconColor,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              'Audio Output',
-                              style: TextStyle(
-                                color: menuTextColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                       PopupMenuItem(
                         value: 'sleep_timer',
                         child: Row(

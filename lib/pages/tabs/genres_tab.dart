@@ -195,7 +195,7 @@ class _GenresTabState extends State<GenresTab> {
                     tooltip: 'Search',
                     onPressed: () {
                       HapticFeedback.selectionClick();
-                      appState.openSearch(initialFilter: SearchFilter.all);
+                      appState.openSearch(initialFilter: SearchFilter.genres);
                     },
                   ),
                   IconButton(

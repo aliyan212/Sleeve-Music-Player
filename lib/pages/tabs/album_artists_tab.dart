@@ -116,7 +116,12 @@ class _AlbumArtistsTabState extends State<AlbumArtistsTab> {
                     tooltip: 'Search',
                     onPressed: () {
                       HapticFeedback.selectionClick();
-                      appState.openSearch(initialFilter: SearchFilter.artists);
+                      final filter = switch (viewMode) {
+                        ArtistsViewMode.albumArtists => SearchFilter.albumArtists,
+                        ArtistsViewMode.artists => SearchFilter.artists,
+                        ArtistsViewMode.composers => SearchFilter.composers,
+                      };
+                      appState.openSearch(initialFilter: filter);
                     },
                   ),
                   IconButton(

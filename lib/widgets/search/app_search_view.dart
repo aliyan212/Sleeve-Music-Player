@@ -3,21 +3,57 @@ import 'package:flutter/services.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/models/album_stat.dart';
+import '../../data/models/genre_stat.dart';
 import '../../services/app_state_controller.dart';
 import '../../services/playback_controller.dart';
 import '../../ui/shared/app_empty_state.dart';
 import '../../ui/shared/fast_artwork_widget.dart';
 import '../../utils/format_utils.dart';
+import '../../utils/song_sort_utils.dart';
 
-/// Available search filter scopes.
 enum SearchFilter {
   all,
   tracks,
   albums,
   artists,
+  albumArtists,
+  composers,
+  genres,
 }
 
-/// Helper managing persistent recent searches in SharedPreferences.
+class SearchCategoryManager {
+  static const String _prefKey = 'search_enabled_categories_v3';
+  static const Set<String> defaultCategories = {
+    'tracks',
+    'albums',
+    'artists',
+    'albumArtists',
+    'composers',
+    'genres',
+  };
+
+  static Future<Set<String>> getEnabledCategories() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_prefKey);
+      if (list == null || list.isEmpty) {
+        return Set<String>.from(defaultCategories);
+      }
+      return list.toSet();
+    } catch (_) {
+      return Set<String>.from(defaultCategories);
+    }
+  }
+
+  static Future<void> saveEnabledCategories(Set<String> categories) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_prefKey, categories.toList());
+    } catch (_) {}
+  }
+}
+
 class SearchHistoryManager {
   static const String _key = 'search_recent_queries';
   static const int maxHistory = 10;
@@ -63,7 +99,6 @@ class SearchHistoryManager {
   }
 }
 
-/// Helper function to highlight matched substrings in text using primary theme color.
 Widget buildHighlightedText({
   required String text,
   required String query,
@@ -74,12 +109,7 @@ Widget buildHighlightedText({
 }) {
   final cleanQuery = query.trim();
   if (cleanQuery.isEmpty) {
-    return Text(
-      text,
-      style: baseStyle,
-      maxLines: maxLines,
-      overflow: overflow,
-    );
+    return Text(text, style: baseStyle, maxLines: maxLines, overflow: overflow);
   }
 
   final lowerText = text.toLowerCase();
@@ -105,24 +135,16 @@ Widget buildHighlightedText({
     spans.add(
       TextSpan(
         text: text.substring(matchIndex, matchEnd),
-        style: TextStyle(
-          color: highlightColor,
-          fontWeight: FontWeight.w700,
-        ),
+        style: TextStyle(color: highlightColor, fontWeight: FontWeight.w700),
       ),
     );
 
     start = matchEnd;
   }
 
-  return Text.rich(
-    TextSpan(style: baseStyle, children: spans),
-    maxLines: maxLines,
-    overflow: overflow,
-  );
+  return Text.rich(TextSpan(style: baseStyle, children: spans), maxLines: maxLines, overflow: overflow);
 }
 
-/// Full-featured Material 3 Expressive Search Page.
 class AppSearchView extends StatefulWidget {
   final SearchFilter initialFilter;
   final String? initialQuery;
@@ -133,7 +155,6 @@ class AppSearchView extends StatefulWidget {
     this.initialQuery,
   });
 
-  /// Opens the search view in-place from any context.
   static Future<void> show(
     BuildContext context, {
     SearchFilter initialFilter = SearchFilter.all,
@@ -164,6 +185,7 @@ class _AppSearchViewState extends State<AppSearchView> {
   late SearchFilter _selectedFilter;
   String _query = '';
   List<String> _recentSearches = [];
+  Set<String> _enabledCategories = Set.from(SearchCategoryManager.defaultCategories);
 
   @override
   void initState() {
@@ -172,6 +194,14 @@ class _AppSearchViewState extends State<AppSearchView> {
     _query = (widget.initialQuery ?? '').trim();
     _controller = TextEditingController(text: widget.initialQuery ?? '');
     _loadRecentSearches();
+    _loadCategories();
+  }
+  
+  Future<void> _loadCategories() async {
+    final cats = await SearchCategoryManager.getEnabledCategories();
+    if (mounted) {
+      setState(() => _enabledCategories = cats);
+    }
   }
 
   Future<void> _loadRecentSearches() async {
@@ -183,9 +213,7 @@ class _AppSearchViewState extends State<AppSearchView> {
 
   void _unfocusAndHideKeyboard() {
     _focusNode.unfocus();
-    if (mounted) {
-      FocusScope.of(context).unfocus();
-    }
+    if (mounted) FocusScope.of(context).unfocus();
     FocusManager.instance.primaryFocus?.unfocus();
     SystemChannels.textInput.invokeMethod('TextInput.hide');
   }
@@ -226,23 +254,124 @@ class _AppSearchViewState extends State<AppSearchView> {
   }
 
   String _getHintText() {
-    switch (_selectedFilter) {
-      case SearchFilter.all:
-        return 'Search tracks, albums, artists...';
-      case SearchFilter.tracks:
-        return 'Search tracks...';
-      case SearchFilter.albums:
-        return 'Search albums...';
-      case SearchFilter.artists:
-        return 'Search artists...';
+    return switch (_selectedFilter) {
+      SearchFilter.all => 'Search...',
+      SearchFilter.tracks => 'Search tracks...',
+      SearchFilter.albums => 'Search albums...',
+      SearchFilter.artists => 'Search artists...',
+      SearchFilter.albumArtists => 'Search album artists...',
+      SearchFilter.composers => 'Search composers...',
+      SearchFilter.genres => 'Search genres...',
+    };
+  }
+
+  void _removeCategory(String categoryKey, String title) {
+    if (_enabledCategories.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('At least one search category must remain active.'), duration: Duration(seconds: 2)),
+      );
+      return;
     }
+    HapticFeedback.lightImpact();
+    setState(() => _enabledCategories.remove(categoryKey));
+    SearchCategoryManager.saveEnabledCategories(_enabledCategories);
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$title hidden from search results'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () {
+            setState(() => _enabledCategories.add(categoryKey));
+            SearchCategoryManager.saveEnabledCategories(_enabledCategories);
+          },
+        ),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+  
+  void _showCategoryFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            Widget buildSwitch(String key, String label, IconData icon) {
+              return SwitchListTile.adaptive(
+                title: Text(label),
+                secondary: Icon(icon),
+                value: _enabledCategories.contains(key),
+                onChanged: (val) {
+                  if (!val && _enabledCategories.length <= 1) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('At least one category must remain active.')),
+                    );
+                    return;
+                  }
+                  HapticFeedback.selectionClick();
+                  setSheetState(() {
+                    if (val) _enabledCategories.add(key);
+                    else _enabledCategories.remove(key);
+                  });
+                  setState(() {});
+                  SearchCategoryManager.saveEnabledCategories(_enabledCategories);
+                },
+              );
+            }
+            
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Text('Search Categories', style: Theme.of(context).textTheme.titleLarge),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        buildSwitch('tracks', 'Tracks', Icons.music_note_rounded),
+                        buildSwitch('albums', 'Albums', Icons.album_rounded),
+                        buildSwitch('artists', 'Artists', Icons.person_rounded),
+                        buildSwitch('albumArtists', 'Album Artists', Icons.group_rounded),
+                        buildSwitch('composers', 'Composers', Icons.draw_rounded),
+                        buildSwitch('genres', 'Genres', Icons.style_rounded),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setSheetState(() {
+                        _enabledCategories.addAll(SearchCategoryManager.defaultCategories);
+                      });
+                      setState(() {});
+                      SearchCategoryManager.saveEnabledCategories(_enabledCategories);
+                    },
+                    child: const Text('Reset to Defaults'),
+                  ),
+                ],
+              ),
+            );
+          }
+        );
+      }
+    );
   }
 
   Widget _buildFilterChip({
     required SearchFilter filter,
     required String label,
     int? count,
+    required String categoryKey,
   }) {
+    // Only show if it's the currently selected filter OR it's enabled in settings.
+    if (!(_enabledCategories.contains(categoryKey) || _selectedFilter == filter)) {
+      return const SizedBox.shrink();
+    }
+    
     final cs = Theme.of(context).colorScheme;
     final isSelected = _selectedFilter == filter;
 
@@ -259,9 +388,7 @@ class _AppSearchViewState extends State<AppSearchView> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                 decoration: BoxDecoration(
-                  color: isSelected
-                      ? cs.primary.withValues(alpha: 0.18)
-                      : cs.surfaceContainerHighest,
+                  color: isSelected ? cs.primary.withValues(alpha: 0.18) : cs.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -296,99 +423,130 @@ class _AppSearchViewState extends State<AppSearchView> {
     bool starts(String? v) => norm(v).startsWith(q);
     bool contains(String? v) => norm(v).contains(q);
 
-    // 1. Artist hits (unique by artist name)
-    final Map<String, SongModel> firstSongByArtist = {};
-    for (final s in songs) {
-      final name = (s.artist ?? '').trim();
-      if (name.isEmpty) continue;
-      firstSongByArtist.putIfAbsent(name.toLowerCase(), () => s);
+    List<T> getHits<T>(Iterable<T> items, String? Function(T) getName) {
+      if (q.isEmpty) return [];
+      final exactMatches = <T>[];
+      final startMatches = <T>[];
+      final containMatches = <T>[];
+      for (final s in items) {
+        final n = getName(s);
+        if (exact(n)) {
+          exactMatches.add(s);
+        } else if (starts(n)) {
+          startMatches.add(s);
+        } else if (contains(n)) {
+          containMatches.add(s);
+        }
+      }
+      return [...exactMatches, ...startMatches, ...containMatches];
     }
 
-    final List<SongModel> artistHits = q.isEmpty
-        ? []
+    // Tracks
+    final trackHits = getHits(songs, (s) => s.title);
+    
+    // Albums
+    final List<AlbumTabStat> albumSource = appState.cachedAlbums.isNotEmpty
+        ? appState.cachedAlbums
         : () {
-            final exactMatches = <SongModel>[];
-            final startMatches = <SongModel>[];
-            final containMatches = <SongModel>[];
-            for (final s in firstSongByArtist.values) {
-              if (exact(s.artist)) {
-                exactMatches.add(s);
-              } else if (starts(s.artist)) {
-                startMatches.add(s);
-              } else if (contains(s.artist)) {
-                containMatches.add(s);
-              }
-            }
-            return [
-              ...exactMatches,
-              ...startMatches,
-              ...containMatches,
-            ];
-          }();
-
-    // 2. Album hits (unique by albumId)
-    final Map<int, SongModel> firstSongByAlbumId = {};
-    for (final s in songs) {
-      final albumId = s.albumId;
-      if (albumId == null || albumId <= 0) continue;
-      firstSongByAlbumId.putIfAbsent(albumId, () => s);
-    }
-
-    final List<SongModel> albumHits = q.isEmpty
-        ? []
-        : () {
-            final exactMatches = <SongModel>[];
-            final startMatches = <SongModel>[];
-            final containMatches = <SongModel>[];
-            for (final s in firstSongByAlbumId.values) {
-              if (exact(s.album)) {
-                exactMatches.add(s);
-              } else if (starts(s.album)) {
-                startMatches.add(s);
-              } else if (contains(s.album)) {
-                containMatches.add(s);
-              }
-            }
-            return [
-              ...exactMatches,
-              ...startMatches,
-              ...containMatches,
-            ];
-          }();
-
-    // 3. Track hits (no arbitrary cap when filtered to tracks)
-    final List<SongModel> trackHits = q.isEmpty
-        ? []
-        : () {
-            final exactMatches = <SongModel>[];
-            final startMatches = <SongModel>[];
-            final containMatches = <SongModel>[];
+            final Map<int, AlbumTabStat> byAlbumId = {};
             for (final s in songs) {
-              if (exact(s.title)) {
-                exactMatches.add(s);
-              } else if (starts(s.title)) {
-                startMatches.add(s);
-              } else if (contains(s.title)) {
-                containMatches.add(s);
-              }
+              final id = s.albumId;
+              if (id == null || id <= 0) continue;
+              byAlbumId.putIfAbsent(id, () => AlbumTabStat(
+                albumId: id, representativeSong: s, title: s.album ?? 'Unknown Album',
+                artist: s.artist ?? 'Unknown Artist', trackCount: 1, year: 0,
+              ));
             }
-            return [
-              ...exactMatches,
-              ...startMatches,
-              ...containMatches,
-            ];
+            return byAlbumId.values.toList();
           }();
+    final albumHits = getHits(albumSource, (s) => s.title);
 
-    Widget header(String text) {
+    // Track Artists
+    final List<AlbumArtistStat> trackArtistSource = appState.cachedTrackArtists.isNotEmpty
+        ? appState.cachedTrackArtists
+        : () {
+            final Map<String, AlbumArtistStat> byName = {};
+            for (final s in songs) {
+              final name = (s.artist ?? '').trim();
+              if (name.isEmpty) continue;
+              final stat = byName.putIfAbsent(name.toLowerCase(), () => AlbumArtistStat(name: name, representativeSong: s));
+              stat.trackCount++;
+            }
+            return byName.values.toList();
+          }();
+    final artistHits = getHits(trackArtistSource, (s) => s.name);
+    
+    // Album Artists
+    final List<AlbumArtistStat> albumArtistSource = appState.cachedAlbumArtists.isNotEmpty
+        ? appState.cachedAlbumArtists
+        : () {
+            final Map<String, AlbumArtistStat> byName = {};
+            for (final s in songs) {
+              final name = (albumArtistFor(s)).trim();
+              if (name.isEmpty) continue;
+              final stat = byName.putIfAbsent(name.toLowerCase(), () => AlbumArtistStat(name: name, representativeSong: s));
+              stat.trackCount++;
+              if (s.albumId != null && s.albumId! > 0) stat.albumIds.add(s.albumId!);
+            }
+            return byName.values.toList();
+          }();
+    final albumArtistHits = getHits(albumArtistSource, (s) => s.name);
+    
+    // Composers
+    final List<AlbumArtistStat> composerSource = appState.cachedComposers.isNotEmpty
+        ? appState.cachedComposers
+        : () {
+            final Map<String, AlbumArtistStat> byName = {};
+            for (final s in songs) {
+              final name = (s.composer ?? '').trim();
+              if (name.isEmpty) continue;
+              final stat = byName.putIfAbsent(name.toLowerCase(), () => AlbumArtistStat(name: name, representativeSong: s));
+              stat.trackCount++;
+            }
+            return byName.values.toList();
+          }();
+    final composerHits = getHits(composerSource, (s) => s.name);
+    
+    // Genres
+    final List<GenreStat> genreSource = appState.cachedGenres.isNotEmpty
+        ? appState.cachedGenres
+        : () {
+            final Map<String, GenreStat> byName = {};
+            for (final s in songs) {
+              final name = (s.genre ?? '').trim();
+              if (name.isEmpty) continue;
+              final stat = byName.putIfAbsent(name.toLowerCase(), () => GenreStat(name: name, representativeSong: s));
+              stat.trackCount++;
+              if (s.albumId != null && s.albumId! > 0) stat.albumIds.add(s.albumId!);
+            }
+            return byName.values.toList();
+          }();
+    final genreHits = getHits(genreSource, (s) => s.name);
+
+    Widget header(String title, {String? categoryKey}) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-        child: Text(
-          text,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: cs.onSurfaceVariant,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.2,
-          ),
+        child: Row(
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+              ),
+            ),
+            const Spacer(),
+            if (categoryKey != null)
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline_rounded, size: 18),
+                tooltip: 'Hide $title from search',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                onPressed: () => _removeCategory(categoryKey, title),
+              ),
+          ],
         ),
       );
     }
@@ -407,9 +565,7 @@ class _AppSearchViewState extends State<AppSearchView> {
             color: cs.surfaceContainerLow,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
-              side: BorderSide(
-                color: cs.outlineVariant.withValues(alpha: 0.35),
-              ),
+              side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.35)),
             ),
           ),
           child: Material(
@@ -448,26 +604,18 @@ class _AppSearchViewState extends State<AppSearchView> {
       );
     }
 
-    // Build the results list based on filter
     final resultItems = <Widget>[];
 
     void addTracks({int? limit}) {
       final list = limit != null ? trackHits.take(limit).toList() : trackHits;
       if (list.isEmpty) return;
-      if (_selectedFilter == SearchFilter.all) {
-        resultItems.add(header('Tracks'));
-      }
+      if (_selectedFilter == SearchFilter.all) resultItems.add(header('Tracks', categoryKey: 'tracks'));
       for (final song in list) {
         final idx = songs.indexWhere((s) => s.id == song.id);
-        final artist = (song.artist ?? '').trim().isEmpty
-            ? 'Unknown Artist'
-            : song.artist!.trim();
-        final album = (song.album ?? '').trim().isEmpty
-            ? 'Unknown Album'
-            : song.album!.trim();
+        final artist = (song.artist ?? '').trim().isEmpty ? 'Unknown Artist' : song.artist!.trim();
+        final album = (song.album ?? '').trim().isEmpty ? 'Unknown Album' : song.album!.trim();
         final duration = song.duration == null ? null : formatTime(song.duration);
-        final subtitleText =
-            duration == null ? '$artist • $album' : '$artist • $album • $duration';
+        final subtitleText = duration == null ? '$artist • $album' : '$artist • $album • $duration';
 
         resultItems.add(
           searchResultTile(
@@ -478,38 +626,20 @@ class _AppSearchViewState extends State<AppSearchView> {
                 width: 52,
                 height: 52,
                 nullArtworkWidget: Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: cs.surfaceContainerHighest,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.music_note_rounded,
-                    color: cs.onSurfaceVariant,
-                    size: 22,
-                  ),
+                  width: 52, height: 52,
+                  decoration: BoxDecoration(color: cs.surfaceContainerHighest, shape: BoxShape.circle),
+                  child: Icon(Icons.music_note_rounded, color: cs.onSurfaceVariant, size: 22),
                 ),
               ),
             ),
             title: buildHighlightedText(
-              text: song.title,
-              query: _query,
-              baseStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.1,
-                  ) ??
-                  const TextStyle(),
+              text: song.title, query: _query,
+              baseStyle: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.1) ?? const TextStyle(),
               highlightColor: cs.primary,
             ),
             subtitle: buildHighlightedText(
-              text: subtitleText,
-              query: _query,
-              baseStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ) ??
-                  const TextStyle(),
+              text: subtitleText, query: _query,
+              baseStyle: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600) ?? const TextStyle(),
               highlightColor: cs.primary,
             ),
             trailing: IconButton.filledTonal(
@@ -519,18 +649,14 @@ class _AppSearchViewState extends State<AppSearchView> {
                 _recordQueryAndSave(_query);
                 HapticFeedback.selectionClick();
                 _dismissSearchAndPop();
-                if (idx != -1) {
-                  playbackController.playFromQueue(songs, initialIndex: idx);
-                }
+                if (idx != -1) playbackController.playFromQueue(songs, initialIndex: idx);
               },
             ),
             onTap: () {
               _recordQueryAndSave(_query);
               HapticFeedback.selectionClick();
               _dismissSearchAndPop();
-              if (idx != -1) {
-                playbackController.playFromQueue(songs, initialIndex: idx);
-              }
+              if (idx != -1) playbackController.playFromQueue(songs, initialIndex: idx);
             },
           ),
         );
@@ -540,57 +666,33 @@ class _AppSearchViewState extends State<AppSearchView> {
     void addAlbums({int? limit}) {
       final list = limit != null ? albumHits.take(limit).toList() : albumHits;
       if (list.isEmpty) return;
-      if (_selectedFilter == SearchFilter.all) {
-        resultItems.add(header('Albums'));
-      }
-      for (final song in list) {
-        final albumId = song.albumId ?? 0;
-        final albumTitle = song.album ?? 'Unknown Album';
-        final artist = song.artist ?? 'Unknown Artist';
-
+      if (_selectedFilter == SearchFilter.all) resultItems.add(header('Albums', categoryKey: 'albums'));
+      for (final album in list) {
         resultItems.add(
           searchResultTile(
             leading: ClipOval(
               child: FastArtworkWidget(
-                id: song.id,
-                fallbackId: albumId,
+                id: album.representativeSong.id,
+                fallbackId: album.albumId,
                 type: ArtworkType.AUDIO,
                 fallbackType: ArtworkType.ALBUM,
                 width: 52,
                 height: 52,
                 nullArtworkWidget: Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: cs.surfaceContainerHighest,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.album_rounded,
-                    color: cs.onSurfaceVariant,
-                    size: 22,
-                  ),
+                  width: 52, height: 52,
+                  decoration: BoxDecoration(color: cs.surfaceContainerHighest, shape: BoxShape.circle),
+                  child: Icon(Icons.album_rounded, color: cs.onSurfaceVariant, size: 22),
                 ),
               ),
             ),
             title: buildHighlightedText(
-              text: albumTitle,
-              query: _query,
-              baseStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.1,
-                  ) ??
-                  const TextStyle(),
+              text: album.title, query: _query,
+              baseStyle: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.1) ?? const TextStyle(),
               highlightColor: cs.primary,
             ),
             subtitle: buildHighlightedText(
-              text: artist,
-              query: _query,
-              baseStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ) ??
-                  const TextStyle(),
+              text: album.artist, query: _query,
+              baseStyle: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600) ?? const TextStyle(),
               highlightColor: cs.primary,
             ),
             trailing: const Icon(Icons.chevron_right_rounded),
@@ -598,61 +700,98 @@ class _AppSearchViewState extends State<AppSearchView> {
               _recordQueryAndSave(_query);
               HapticFeedback.selectionClick();
               _dismissSearchAndPop();
-              appState.openAlbumPageFromSong(context, song);
+              appState.openAlbumPageFromSong(context, album.representativeSong);
             },
           ),
         );
       }
     }
 
-    void addArtists({int? limit}) {
-      final list = limit != null ? artistHits.take(limit).toList() : artistHits;
+    void buildGenericArtistTile(
+      String sectionLabel, String categoryKey, List<AlbumArtistStat> hits, int? limit,
+      IconData icon, String subtitlePrefix, void Function(String name) onOpen
+    ) {
+      final list = limit != null ? hits.take(limit).toList() : hits;
       if (list.isEmpty) return;
-      if (_selectedFilter == SearchFilter.all) {
-        resultItems.add(header('Artists'));
-      }
-      for (final song in list) {
-        final name = (song.artist ?? '').trim();
-        if (name.isEmpty) continue;
-
+      if (_selectedFilter == SearchFilter.all) resultItems.add(header(sectionLabel, categoryKey: categoryKey));
+      for (final stat in list) {
         resultItems.add(
           searchResultTile(
-            leading: Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                Icons.person_rounded,
-                color: cs.onSurfaceVariant,
-                size: 22,
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: FastArtworkWidget(
+                id: stat.representativeSong?.id ?? 0,
+                fallbackId: stat.representativeSong?.albumId,
+                type: stat.representativeSong != null ? ArtworkType.AUDIO : ArtworkType.ALBUM,
+                fallbackType: ArtworkType.ALBUM,
+                width: 52,
+                height: 52,
+                nullArtworkWidget: Container(
+                  width: 52, height: 52,
+                  decoration: BoxDecoration(color: cs.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
+                  child: Icon(icon, color: cs.onSurfaceVariant, size: 22),
+                ),
               ),
             ),
             title: buildHighlightedText(
-              text: name,
-              query: _query,
-              baseStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.1,
-                  ) ??
-                  const TextStyle(),
+              text: stat.name, query: _query,
+              baseStyle: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.1) ?? const TextStyle(),
               highlightColor: cs.primary,
             ),
             subtitle: Text(
-              'Artist',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
+              '$subtitlePrefix • ${stat.trackCount} ${stat.trackCount == 1 ? 'track' : 'tracks'}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600),
             ),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () {
               _recordQueryAndSave(_query);
               HapticFeedback.selectionClick();
               _dismissSearchAndPop();
-              appState.openArtistPageByName(context, name);
+              onOpen(stat.name);
+            },
+          ),
+        );
+      }
+    }
+
+    void buildGenreTile(List<GenreStat> hits, int? limit) {
+      final list = limit != null ? hits.take(limit).toList() : hits;
+      if (list.isEmpty) return;
+      if (_selectedFilter == SearchFilter.all) resultItems.add(header('Genres', categoryKey: 'genres'));
+      for (final stat in list) {
+        resultItems.add(
+          searchResultTile(
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: FastArtworkWidget(
+                id: stat.representativeSong?.id ?? 0,
+                fallbackId: stat.representativeSong?.albumId,
+                type: stat.representativeSong != null ? ArtworkType.AUDIO : ArtworkType.ALBUM,
+                fallbackType: ArtworkType.ALBUM,
+                width: 52,
+                height: 52,
+                nullArtworkWidget: Container(
+                  width: 52, height: 52,
+                  decoration: BoxDecoration(color: cs.surfaceContainerHighest, borderRadius: BorderRadius.circular(14)),
+                  child: Icon(Icons.style_rounded, color: cs.onSurfaceVariant, size: 22),
+                ),
+              ),
+            ),
+            title: buildHighlightedText(
+              text: stat.name, query: _query,
+              baseStyle: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.1) ?? const TextStyle(),
+              highlightColor: cs.primary,
+            ),
+            subtitle: Text(
+              'Genre • ${stat.trackCount} ${stat.trackCount == 1 ? 'track' : 'tracks'}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600),
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () {
+              _recordQueryAndSave(_query);
+              HapticFeedback.selectionClick();
+              _dismissSearchAndPop();
+              appState.openGenrePage(context, stat);
             },
           ),
         );
@@ -662,23 +801,35 @@ class _AppSearchViewState extends State<AppSearchView> {
     if (q.isNotEmpty) {
       switch (_selectedFilter) {
         case SearchFilter.all:
-          addTracks(limit: 15);
-          addAlbums(limit: 6);
-          addArtists(limit: 6);
+          if (_enabledCategories.contains('tracks')) addTracks(limit: 15);
+          if (_enabledCategories.contains('albums')) addAlbums(limit: 6);
+          if (_enabledCategories.contains('artists')) buildGenericArtistTile('Artists', 'artists', artistHits, 6, Icons.person_rounded, 'Artist', (name) => appState.openArtistPageByName(context, name));
+          if (_enabledCategories.contains('albumArtists')) buildGenericArtistTile('Album Artists', 'albumArtists', albumArtistHits, 6, Icons.group_rounded, 'Album Artist', (name) => appState.openArtistPageByName(context, name));
+          if (_enabledCategories.contains('composers')) buildGenericArtistTile('Composers', 'composers', composerHits, 6, Icons.draw_rounded, 'Composer', (name) => appState.openComposerPageByName(context, name));
+          if (_enabledCategories.contains('genres')) buildGenreTile(genreHits, 6);
           break;
-        case SearchFilter.tracks:
-          addTracks(); // No cap: browse all tracks
+        case SearchFilter.tracks: 
+          addTracks(); 
           break;
-        case SearchFilter.albums:
-          addAlbums();
+        case SearchFilter.albums: 
+          addAlbums(); 
           break;
-        case SearchFilter.artists:
-          addArtists();
+        case SearchFilter.artists: 
+          buildGenericArtistTile('Artists', 'artists', artistHits, null, Icons.person_rounded, 'Artist', (name) => appState.openArtistPageByName(context, name)); 
+          break;
+        case SearchFilter.albumArtists: 
+          buildGenericArtistTile('Album Artists', 'albumArtists', albumArtistHits, null, Icons.group_rounded, 'Album Artist', (name) => appState.openArtistPageByName(context, name)); 
+          break;
+        case SearchFilter.composers: 
+          buildGenericArtistTile('Composers', 'composers', composerHits, null, Icons.draw_rounded, 'Composer', (name) => appState.openComposerPageByName(context, name)); 
+          break;
+        case SearchFilter.genres: 
+          buildGenreTile(genreHits, null); 
           break;
       }
     }
 
-    final hasAnyResults = trackHits.isNotEmpty || albumHits.isNotEmpty || artistHits.isNotEmpty;
+    final hasAnyResults = resultItems.isNotEmpty;
 
     return PopScope(
       canPop: true,
@@ -737,38 +888,36 @@ class _AppSearchViewState extends State<AppSearchView> {
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   child: Row(
                     children: [
-                      _buildFilterChip(
-                        filter: SearchFilter.all,
-                        label: 'All',
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          selected: _selectedFilter == SearchFilter.all,
+                          label: const Text('All'),
+                          onSelected: (_) {
+                            HapticFeedback.selectionClick();
+                            setState(() => _selectedFilter = SearchFilter.all);
+                          },
+                        ),
                       ),
-                      _buildFilterChip(
-                        filter: SearchFilter.tracks,
-                        label: 'Tracks',
-                        count: trackHits.length,
-                      ),
-                      _buildFilterChip(
-                        filter: SearchFilter.albums,
-                        label: 'Albums',
-                        count: albumHits.length,
-                      ),
-                      _buildFilterChip(
-                        filter: SearchFilter.artists,
-                        label: 'Artists',
-                        count: artistHits.length,
+                      _buildFilterChip(filter: SearchFilter.tracks, label: 'Tracks', count: trackHits.length, categoryKey: 'tracks'),
+                      _buildFilterChip(filter: SearchFilter.albums, label: 'Albums', count: albumHits.length, categoryKey: 'albums'),
+                      _buildFilterChip(filter: SearchFilter.artists, label: 'Artists', count: artistHits.length, categoryKey: 'artists'),
+                      _buildFilterChip(filter: SearchFilter.albumArtists, label: 'Album Artists', count: albumArtistHits.length, categoryKey: 'albumArtists'),
+                      _buildFilterChip(filter: SearchFilter.composers, label: 'Composers', count: composerHits.length, categoryKey: 'composers'),
+                      _buildFilterChip(filter: SearchFilter.genres, label: 'Genres', count: genreHits.length, categoryKey: 'genres'),
+                      IconButton(
+                        icon: const Icon(Icons.tune_rounded, size: 20),
+                        tooltip: 'Customize categories',
+                        onPressed: _showCategoryFilterSheet,
                       ),
                     ],
                   ),
                 ),
-                Divider(
-                  height: 1,
-                  color: cs.outlineVariant.withValues(alpha: 0.28),
-                ),
+                Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.28)),
                 Expanded(
                   child: NotificationListener<ScrollNotification>(
                     onNotification: (notification) {
-                      if (notification is ScrollStartNotification) {
-                        _unfocusAndHideKeyboard();
-                      }
+                      if (notification is ScrollStartNotification) _unfocusAndHideKeyboard();
                       return false;
                     },
                     child: q.isEmpty
@@ -777,8 +926,7 @@ class _AppSearchViewState extends State<AppSearchView> {
                             ? AppEmptyState(
                                 icon: Icons.search_off_rounded,
                                 title: 'No results found',
-                                message:
-                                    'We couldn’t find any matches for "$_query". Check for typos or try searching by artist.',
+                                message: 'We couldn’t find any matches for "$_query". Check for typos or adjust filters.',
                               )
                             : ListView(
                                 keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -803,18 +951,11 @@ class _AppSearchViewState extends State<AppSearchView> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.search_rounded,
-                size: 48,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.4),
-              ),
+              Icon(Icons.search_rounded, size: 48, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
               const SizedBox(height: 12),
               Text(
-                'Search for tracks, albums, or artists',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                    ),
+                'Search for tracks, albums, artists, or genres',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w500),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -822,7 +963,6 @@ class _AppSearchViewState extends State<AppSearchView> {
         ),
       );
     }
-
     return ListView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -831,14 +971,7 @@ class _AppSearchViewState extends State<AppSearchView> {
           padding: const EdgeInsets.fromLTRB(16, 6, 8, 4),
           child: Row(
             children: [
-              Text(
-                'Recent Searches',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.1,
-                    ),
-              ),
+              Text('Recent Searches', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w700, letterSpacing: 0.1)),
               const Spacer(),
               TextButton(
                 onPressed: () async {
@@ -853,18 +986,8 @@ class _AppSearchViewState extends State<AppSearchView> {
         ),
         for (final item in _recentSearches)
           ListTile(
-            leading: Icon(
-              Icons.history_rounded,
-              color: cs.onSurfaceVariant,
-            ),
-            title: Text(
-              item,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
+            leading: Icon(Icons.history_rounded, color: cs.onSurfaceVariant),
+            title: Text(item, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
             trailing: IconButton(
               icon: const Icon(Icons.close_rounded, size: 18),
               tooltip: 'Remove',
@@ -877,9 +1000,7 @@ class _AppSearchViewState extends State<AppSearchView> {
             onTap: () {
               HapticFeedback.selectionClick();
               _controller.text = item;
-              _controller.selection = TextSelection.fromPosition(
-                TextPosition(offset: item.length),
-              );
+              _controller.selection = TextSelection.fromPosition(TextPosition(offset: item.length));
               setState(() => _query = item);
               _unfocusAndHideKeyboard();
             },

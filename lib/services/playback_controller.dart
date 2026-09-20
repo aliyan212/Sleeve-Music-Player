@@ -200,10 +200,21 @@ class PlaybackController {
     if (_player.processingState == ProcessingState.completed) {
       await _player.seek(Duration.zero);
     }
+    if (_player.volume < 0.1) {
+      try {
+        await _player.setVolume(1.0);
+      } catch (_) {}
+    }
     return _player.play();
   }
-  Future<void> pause() => _player.pause();
-  Future<void> stop() => _player.stop();
+  Future<void> pause() {
+    audioHandler?.clearInterruptionResume();
+    return _player.pause();
+  }
+  Future<void> stop() {
+    audioHandler?.clearInterruptionResume();
+    return _player.stop();
+  }
 
   Future<void> togglePlayPause() async {
     HapticFeedback.lightImpact();
@@ -375,6 +386,11 @@ class PlaybackController {
       } else {
         await _player.seek(Duration.zero, index: index);
       }
+      if (_player.volume < 0.1) {
+        try {
+          unawaited(_player.setVolume(1.0));
+        } catch (_) {}
+      }
       unawaited(_player.play());
       recordPlayForSongId(songs[index].id);
     } catch (e, st) {
@@ -412,6 +428,11 @@ class PlaybackController {
         newPlaylist,
         initialIndex: initialIndex,
       );
+      if (_player.volume < 0.1) {
+        try {
+          unawaited(_player.setVolume(1.0));
+        } catch (_) {}
+      }
       unawaited(_player.play());
       recordPlayForSongId(songId);
     } catch (e, st) {
