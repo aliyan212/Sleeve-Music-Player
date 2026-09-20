@@ -29,6 +29,20 @@ int compareSortStrings(String a, String b) {
   return aNorm.compareTo(bNorm);
 }
 
+int compareSortStringsDesc(String a, String b) {
+  final aNorm = normalizeSortText(a);
+  final bNorm = normalizeSortText(b);
+  final aEmpty = aNorm.isEmpty;
+  final bEmpty = bNorm.isEmpty;
+  if (aEmpty != bEmpty) return aEmpty ? 1 : -1;
+
+  final aLower = aNorm.toLowerCase();
+  final bLower = bNorm.toLowerCase();
+  final comp = bLower.compareTo(aLower);
+  if (comp != 0) return comp;
+  return bNorm.compareTo(aNorm);
+}
+
 int compareStrings(String a, String b) {
   final aTrim = a.trim();
   final bTrim = b.trim();
@@ -38,6 +52,7 @@ int compareStrings(String a, String b) {
   if (comp != 0) return comp;
   return aTrim.compareTo(bTrim);
 }
+
 
 int yearFromSong(SongModel s) {
   final map = s.getMap;
@@ -176,4 +191,145 @@ Map<String, int> computeAlbumYearMap(Iterable<SongModel> songs) {
   }
   return out;
 }
+
+String composerFromSong(SongModel s) =>
+    (s.composer ?? (s.getMap['composer'] as String?))?.trim() ?? '';
+
+String genreFromSong(SongModel s) => s.genre?.trim() ?? '';
+
+String albumFromSong(SongModel s) =>
+    s.album ?? playbackController.albumMap[s.albumId]?.album ?? '';
+
+int compareYears(int ya, int yb, {required bool ascending}) {
+  final aValid = ya > 0;
+  final bValid = yb > 0;
+  if (!aValid && !bValid) return 0;
+  if (!aValid) return 1;
+  if (!bValid) return -1;
+  return ascending ? ya.compareTo(yb) : yb.compareTo(ya);
+}
+
+int compareTracks(SongModel a, SongModel b, {required bool ascending}) {
+  final ta = trackFromSong(a);
+  final tb = trackFromSong(b);
+  final aValid = ta > 0;
+  final bValid = tb > 0;
+  if (!aValid && !bValid) return 0;
+  if (!aValid) return 1;
+  if (!bValid) return -1;
+  final comp = ascending ? ta.compareTo(tb) : tb.compareTo(ta);
+  if (comp != 0) return comp;
+  final tc = compareSortStrings(a.title, b.title);
+  if (tc != 0) return tc;
+  return a.id.compareTo(b.id);
+}
+
+int compareDurations(SongModel a, SongModel b, {required bool ascending}) {
+  final da = a.duration ?? 0;
+  final db = b.duration ?? 0;
+  final aValid = da > 0;
+  final bValid = db > 0;
+  if (!aValid && !bValid) return 0;
+  if (!aValid) return 1;
+  if (!bValid) return -1;
+  final comp = ascending ? da.compareTo(db) : db.compareTo(da);
+  if (comp != 0) return comp;
+  final tc = compareSortStrings(a.title, b.title);
+  if (tc != 0) return tc;
+  return a.id.compareTo(b.id);
+}
+
+int comparePlayCounts(
+  SongModel a,
+  SongModel b,
+  Map<int, int> playCounts, {
+  required bool descending,
+}) {
+  final ca = playCounts[a.id] ?? 0;
+  final cb = playCounts[b.id] ?? 0;
+  final comp = descending ? cb.compareTo(ca) : ca.compareTo(cb);
+  if (comp != 0) return comp;
+  final tc = compareSortStrings(a.title, b.title);
+  if (tc != 0) return tc;
+  return a.id.compareTo(b.id);
+}
+
+int compareComposers(SongModel a, SongModel b, {required bool ascending}) {
+  final ca = composerFromSong(a);
+  final cb = composerFromSong(b);
+  final comp = ascending
+      ? compareSortStrings(ca, cb)
+      : compareSortStringsDesc(ca, cb);
+  if (comp != 0) return comp;
+  final tc = compareSortStrings(a.title, b.title);
+  if (tc != 0) return tc;
+  return a.id.compareTo(b.id);
+}
+
+int compareGenres(SongModel a, SongModel b, {required bool ascending}) {
+  final ga = genreFromSong(a);
+  final gb = genreFromSong(b);
+  final comp = ascending
+      ? compareSortStrings(ga, gb)
+      : compareSortStringsDesc(ga, gb);
+  if (comp != 0) return comp;
+  final ac = compareSortStrings(a.artist ?? '', b.artist ?? '');
+  if (ac != 0) return ac;
+  final tc = compareSortStrings(a.title, b.title);
+  if (tc != 0) return tc;
+  return a.id.compareTo(b.id);
+}
+
+int compareAlbums(SongModel a, SongModel b, {required bool ascending}) {
+  final albA = albumFromSong(a);
+  final albB = albumFromSong(b);
+  final comp = ascending
+      ? compareSortStrings(albA, albB)
+      : compareSortStringsDesc(albA, albB);
+  if (comp != 0) return comp;
+  final tc = compareDiscAndTrack(a, b);
+  if (tc != 0) return tc;
+  final tComp = compareSortStrings(a.title, b.title);
+  if (tComp != 0) return tComp;
+  return a.id.compareTo(b.id);
+}
+
+int compareTrackArtists(SongModel a, SongModel b, {required bool ascending}) {
+  final artA = a.artist ?? '';
+  final artB = b.artist ?? '';
+  final comp = ascending
+      ? compareSortStrings(artA, artB)
+      : compareSortStringsDesc(artA, artB);
+  if (comp != 0) return comp;
+  final albComp = compareAlbums(a, b, ascending: true);
+  if (albComp != 0) return albComp;
+  final tc = compareDiscAndTrack(a, b);
+  if (tc != 0) return tc;
+  return compareSortStrings(a.title, b.title);
+}
+
+int compareAlbumArtists(SongModel a, SongModel b, {required bool ascending}) {
+  final aaA = albumArtistFor(a);
+  final aaB = albumArtistFor(b);
+  final comp = ascending
+      ? compareSortStrings(aaA, aaB)
+      : compareSortStringsDesc(aaA, aaB);
+  if (comp != 0) return comp;
+  final albComp = compareAlbums(a, b, ascending: true);
+  if (albComp != 0) return albComp;
+  final tc = compareDiscAndTrack(a, b);
+  if (tc != 0) return tc;
+  return compareSortStrings(a.title, b.title);
+}
+
+int compareTitles(SongModel a, SongModel b, {required bool ascending}) {
+  final comp = ascending
+      ? compareSortStrings(a.title, b.title)
+      : compareSortStringsDesc(a.title, b.title);
+  if (comp != 0) return comp;
+  final ac = compareSortStrings(a.artist ?? '', b.artist ?? '');
+  if (ac != 0) return ac;
+  return a.id.compareTo(b.id);
+}
+
 

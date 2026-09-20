@@ -1003,11 +1003,27 @@ class AppStateController extends ChangeNotifier
 
       final libSortName = prefs.getString(_librarySortKey);
       if (libSortName != null) {
-        for (final m in SortMode.values) {
-          if (m.name == libSortName) {
-            _controller.sortMode = m;
+        switch (libSortName) {
+          case 'artist':
+            _controller.sortMode = SortMode.artistAsc;
             break;
-          }
+          case 'albumArtist':
+            _controller.sortMode = SortMode.albumArtistAsc;
+            break;
+          case 'year':
+            _controller.sortMode = SortMode.yearAsc;
+            break;
+          case 'albumArtistYear':
+            _controller.sortMode = SortMode.albumArtistYearAsc;
+            break;
+          default:
+            for (final m in SortMode.values) {
+              if (m.name == libSortName) {
+                _controller.sortMode = m;
+                break;
+              }
+            }
+            break;
         }
       }
 

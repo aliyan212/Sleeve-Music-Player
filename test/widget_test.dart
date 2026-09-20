@@ -518,6 +518,99 @@ void main() {
       expect(prefs.getString('library_sort_mode_v1'), SortMode.artist.name);
     });
 
+    test('loadSavedSortPreferences migrates legacy string names', () async {
+      SharedPreferences.setMockInitialValues({
+        'library_sort_mode_v1': 'artist',
+      });
+      final appState = AppStateController.instance;
+      await appState.loadSavedSortPreferences();
+      expect(playbackController.sortMode, SortMode.artistAsc);
+    });
+
+    test('applySort saves and updates library sort mode for all new modes', () async {
+      final appState = AppStateController.instance;
+      final modesToTest = [
+        SortMode.titleAsc,
+        SortMode.titleDesc,
+        SortMode.albumAsc,
+        SortMode.albumDesc,
+        SortMode.artistAsc,
+        SortMode.artistDesc,
+        SortMode.albumArtistAsc,
+        SortMode.albumArtistDesc,
+        SortMode.albumArtistYearAsc,
+        SortMode.albumArtistYearDesc,
+        SortMode.composerAsc,
+        SortMode.composerDesc,
+        SortMode.genreAsc,
+        SortMode.genreDesc,
+        SortMode.yearAsc,
+        SortMode.yearDesc,
+        SortMode.durationAsc,
+        SortMode.durationDesc,
+        SortMode.trackAsc,
+        SortMode.trackDesc,
+        SortMode.mostPlayed,
+        SortMode.leastPlayed,
+      ];
+
+      final prefs = await SharedPreferences.getInstance();
+      for (final mode in modesToTest) {
+        await appState.applySort(mode);
+        expect(playbackController.sortMode, mode);
+        expect(prefs.getString('library_sort_mode_v1'), mode.name);
+      }
+    });
+
+    test('Song sort utils comparators behave correctly', () {
+      expect(compareSortStringsDesc('A', 'Z'), greaterThan(0));
+      expect(compareSortStringsDesc('Z', 'A'), lessThan(0));
+      expect(compareSortStringsDesc('Unknown', 'Song'), greaterThan(0));
+      expect(compareSortStringsDesc('Song', 'Unknown'), lessThan(0));
+
+      // Years
+      expect(compareYears(2020, 2010, ascending: true), greaterThan(0));
+      expect(compareYears(2020, 2010, ascending: false), lessThan(0));
+      expect(compareYears(0, 2020, ascending: false), greaterThan(0));
+      expect(compareYears(2020, 0, ascending: false), lessThan(0));
+
+      // Tracks
+      final s1 = SongModel({'_id': 1, 'title': 'One', 'track': 1});
+      final s2 = SongModel({'_id': 2, 'title': 'Two', 'track': 2});
+      final s0 = SongModel({'_id': 3, 'title': 'Zero', 'track': 0});
+      expect(compareTracks(s1, s2, ascending: true), lessThan(0));
+      expect(compareTracks(s1, s2, ascending: false), greaterThan(0));
+      expect(compareTracks(s0, s1, ascending: false), greaterThan(0));
+
+      // Durations
+      final d1 = SongModel({'_id': 1, 'title': 'Short', 'duration': 60000});
+      final d2 = SongModel({'_id': 2, 'title': 'Long', 'duration': 300000});
+      final d0 = SongModel({'_id': 3, 'title': 'Zero', 'duration': 0});
+      expect(compareDurations(d1, d2, ascending: true), lessThan(0));
+      expect(compareDurations(d1, d2, ascending: false), greaterThan(0));
+      expect(compareDurations(d0, d1, ascending: false), greaterThan(0));
+
+      // Play counts
+      final p1 = SongModel({'_id': 1, 'title': 'A'});
+      final p2 = SongModel({'_id': 2, 'title': 'B'});
+      final playCounts = {1: 10, 2: 2};
+      expect(comparePlayCounts(p1, p2, playCounts, descending: true), lessThan(0));
+      expect(comparePlayCounts(p1, p2, playCounts, descending: false), greaterThan(0));
+
+      // Composers
+      final c1 = SongModel({'_id': 1, 'title': 'A', 'composer': 'Bach'});
+      final c2 = SongModel({'_id': 2, 'title': 'B', 'composer': 'Mozart'});
+      expect(compareComposers(c1, c2, ascending: true), lessThan(0));
+      expect(compareComposers(c1, c2, ascending: false), greaterThan(0));
+
+      // Genres
+      final g1 = SongModel({'_id': 1, 'title': 'A', 'genre': 'Classical'});
+      final g2 = SongModel({'_id': 2, 'title': 'B', 'genre': 'Rock'});
+      expect(compareGenres(g1, g2, ascending: true), lessThan(0));
+      expect(compareGenres(g1, g2, ascending: false), greaterThan(0));
+    });
+
+
     test('applyAlbumsSort saves and updates albums sort mode', () async {
       final appState = AppStateController.instance;
       await appState.applyAlbumsSort(AlbumsSort.leastTracks);
@@ -671,6 +764,33 @@ void main() {
                 controller: controller,
                 itemCount: trackCounts.length,
                 itemBuilder: (context, i) => ListTile(title: Text('Album $i: ${trackCounts[i]} tracks')),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(AlphabeticalBubbleScroller), findsOneWidget);
+      controller.dispose();
+    });
+
+    testWidgets('supports duration buckets and zero play count sections without collapsing into #', (tester) async {
+      final controller = ScrollController();
+      final durations = ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '10m', '15m'];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AlphabeticalBubbleScroller(
+              scrollController: controller,
+              itemCount: durations.length,
+              isNumericSort: true,
+              sortKey: 'durationAsc',
+              sectionKeyOf: (index) => durations[index],
+              child: ListView.builder(
+                controller: controller,
+                itemCount: durations.length,
+                itemBuilder: (context, i) => ListTile(title: Text('Track $i: ${durations[i]}')),
               ),
             ),
           ),
@@ -1476,6 +1596,13 @@ void main() {
     });
 
     testWidgets('AppSortBottomSheet displays song sort options and selects', (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
       SortMode? selectedMode;
 
       await tester.pumpWidget(

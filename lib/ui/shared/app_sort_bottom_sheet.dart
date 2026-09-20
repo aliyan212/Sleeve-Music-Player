@@ -270,29 +270,178 @@ Future<void> showSongSortBottomSheet(
     currentSort: currentSort,
     onSortSelected: onSortSelected,
     options: const [
+      // ── Title ──
       AppSortOption(
-        value: SortMode.artist,
+        value: SortMode.titleAsc,
+        title: 'Title',
+        subtitle: 'A → Z',
+        icon: Icons.sort_by_alpha_rounded,
+        sectionTitle: 'Title',
+      ),
+      AppSortOption(
+        value: SortMode.titleDesc,
+        title: 'Title (Descending)',
+        subtitle: 'Z → A',
+        icon: Icons.sort_by_alpha_rounded,
+        sectionTitle: 'Title',
+      ),
+
+      // ── Track Artist ──
+      AppSortOption(
+        value: SortMode.artistAsc,
         title: 'Track Artist',
-        subtitle: 'Alphabetical by track artist',
+        subtitle: 'A → Z',
         icon: Icons.person_rounded,
+        sectionTitle: 'Artist',
       ),
       AppSortOption(
-        value: SortMode.albumArtist,
+        value: SortMode.artistDesc,
+        title: 'Track Artist (Descending)',
+        subtitle: 'Z → A',
+        icon: Icons.person_rounded,
+        sectionTitle: 'Artist',
+      ),
+
+      // ── Album Artist ──
+      AppSortOption(
+        value: SortMode.albumArtistAsc,
         title: 'Album Artist',
-        subtitle: 'Alphabetical by album artist',
+        subtitle: 'A → Z',
         icon: Icons.person_outline_rounded,
+        sectionTitle: 'Album Artist',
       ),
       AppSortOption(
-        value: SortMode.year,
-        title: 'Release Year',
-        subtitle: 'Chronological order by year',
-        icon: Icons.event_rounded,
+        value: SortMode.albumArtistDesc,
+        title: 'Album Artist (Descending)',
+        subtitle: 'Z → A',
+        icon: Icons.person_outline_rounded,
+        sectionTitle: 'Album Artist',
       ),
       AppSortOption(
-        value: SortMode.albumArtistYear,
+        value: SortMode.albumArtistYearAsc,
         title: 'Album Artist & Year',
-        subtitle: 'Grouped by album artist, then year',
+        subtitle: 'Grouped by album artist, then release year',
         icon: Icons.calendar_view_month_rounded,
+        sectionTitle: 'Album Artist',
+      ),
+      AppSortOption(
+        value: SortMode.albumArtistYearDesc,
+        title: 'Album Artist & Year (Descending)',
+        subtitle: 'Grouped by album artist (Z → A), then year',
+        icon: Icons.calendar_view_month_rounded,
+        sectionTitle: 'Album Artist',
+      ),
+
+      // ── Album ──
+      AppSortOption(
+        value: SortMode.albumAsc,
+        title: 'Album',
+        subtitle: 'A → Z',
+        icon: Icons.album_rounded,
+        sectionTitle: 'Album',
+      ),
+      AppSortOption(
+        value: SortMode.albumDesc,
+        title: 'Album (Descending)',
+        subtitle: 'Z → A',
+        icon: Icons.album_outlined,
+        sectionTitle: 'Album',
+      ),
+
+      // ── Composer ──
+      AppSortOption(
+        value: SortMode.composerAsc,
+        title: 'Composer',
+        subtitle: 'A → Z',
+        icon: Icons.history_edu_rounded,
+        sectionTitle: 'Composer',
+      ),
+      AppSortOption(
+        value: SortMode.composerDesc,
+        title: 'Composer (Descending)',
+        subtitle: 'Z → A',
+        icon: Icons.history_edu_rounded,
+        sectionTitle: 'Composer',
+      ),
+
+      // ── Genre ──
+      AppSortOption(
+        value: SortMode.genreAsc,
+        title: 'Genre',
+        subtitle: 'A → Z',
+        icon: Icons.category_rounded,
+        sectionTitle: 'Genre',
+      ),
+      AppSortOption(
+        value: SortMode.genreDesc,
+        title: 'Genre (Descending)',
+        subtitle: 'Z → A',
+        icon: Icons.category_outlined,
+        sectionTitle: 'Genre',
+      ),
+
+      // ── Release Year ──
+      AppSortOption(
+        value: SortMode.yearAsc,
+        title: 'Release Year',
+        subtitle: 'Oldest first',
+        icon: Icons.history_rounded,
+        sectionTitle: 'Release Year',
+      ),
+      AppSortOption(
+        value: SortMode.yearDesc,
+        title: 'Release Year (Newest)',
+        subtitle: 'Newest first',
+        icon: Icons.event_rounded,
+        sectionTitle: 'Release Year',
+      ),
+
+      // ── Duration ──
+      AppSortOption(
+        value: SortMode.durationAsc,
+        title: 'Duration',
+        subtitle: 'Shortest first',
+        icon: Icons.timer_outlined,
+        sectionTitle: 'Duration',
+      ),
+      AppSortOption(
+        value: SortMode.durationDesc,
+        title: 'Duration (Longest)',
+        subtitle: 'Longest first',
+        icon: Icons.timer_rounded,
+        sectionTitle: 'Duration',
+      ),
+
+      // ── Track Number ──
+      AppSortOption(
+        value: SortMode.trackAsc,
+        title: 'Track Number',
+        subtitle: '1 → N',
+        icon: Icons.format_list_numbered_rounded,
+        sectionTitle: 'Track Number',
+      ),
+      AppSortOption(
+        value: SortMode.trackDesc,
+        title: 'Track Number (Descending)',
+        subtitle: 'N → 1',
+        icon: Icons.format_list_numbered_rounded,
+        sectionTitle: 'Track Number',
+      ),
+
+      // ── Play Count ──
+      AppSortOption(
+        value: SortMode.mostPlayed,
+        title: 'Most Played',
+        subtitle: 'Highest play count first',
+        icon: Icons.local_fire_department_rounded,
+        sectionTitle: 'Play Count',
+      ),
+      AppSortOption(
+        value: SortMode.leastPlayed,
+        title: 'Least Played',
+        subtitle: 'Lowest play count first',
+        icon: Icons.bar_chart_rounded,
+        sectionTitle: 'Play Count',
       ),
     ],
   );

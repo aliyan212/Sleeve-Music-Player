@@ -93,9 +93,13 @@ class _AlphabeticalBubbleScrollerState extends State<AlphabeticalBubbleScroller>
     if (trimmed.isEmpty) return '#';
 
     if (widget.isNumericSort) {
+      if (trimmed == '#') return '#';
       final parsed = int.tryParse(trimmed);
       if (parsed != null) {
-        if (parsed <= 0) return '#';
+        if (parsed >= 0) return trimmed;
+        return '#';
+      }
+      if (RegExp(r'^\d+[a-zA-Z]+$').hasMatch(trimmed)) {
         return trimmed;
       }
       return '#';

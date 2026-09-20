@@ -514,16 +514,35 @@ class PlaybackController {
 
     final albumYearMap = computeAlbumYearMap(songs);
 
+    final playCounts = _playCountBySongId;
+
     songs.sort((a, b) {
       switch (mode) {
-        case SortMode.artist:
-          final c = _cs(a.artist ?? '', b.artist ?? '');
-          if (c != 0) return c;
-          return _cs(a.title, b.title);
-        case SortMode.albumArtist:
-          final ac = _cs(_albumArtistFor(a), _albumArtistFor(b));
-          if (ac != 0) return ac;
-
+        case SortMode.titleAsc:
+          return compareTitles(a, b, ascending: true);
+        case SortMode.titleDesc:
+          return compareTitles(a, b, ascending: false);
+        case SortMode.albumAsc:
+          return compareAlbums(a, b, ascending: true);
+        case SortMode.albumDesc:
+          return compareAlbums(a, b, ascending: false);
+        case SortMode.artistAsc:
+          return compareTrackArtists(a, b, ascending: true);
+        case SortMode.artistDesc:
+          return compareTrackArtists(a, b, ascending: false);
+        case SortMode.albumArtistAsc:
+          return compareAlbumArtists(a, b, ascending: true);
+        case SortMode.albumArtistDesc:
+          return compareAlbumArtists(a, b, ascending: false);
+        case SortMode.composerAsc:
+          return compareComposers(a, b, ascending: true);
+        case SortMode.composerDesc:
+          return compareComposers(a, b, ascending: false);
+        case SortMode.genreAsc:
+          return compareGenres(a, b, ascending: true);
+        case SortMode.genreDesc:
+          return compareGenres(a, b, ascending: false);
+        case SortMode.yearAsc:
           final keyA = albumIdentityKey(a);
           final keyB = albumIdentityKey(b);
           if (keyA == keyB) {
@@ -533,13 +552,18 @@ class PlaybackController {
             if (tComp != 0) return tComp;
             return a.id.compareTo(b.id);
           }
-
+          final ya = albumYearMap[keyA] ?? 0;
+          final yb = albumYearMap[keyB] ?? 0;
+          final yc = compareYears(ya, yb, ascending: true);
+          if (yc != 0) return yc;
+          final ac = _cs(_albumArtistFor(a), _albumArtistFor(b));
+          if (ac != 0) return ac;
           final alc = _cs(a.album ?? '', b.album ?? '');
           if (alc != 0) return alc;
           final tc = _compareDiscAndTrack(a, b);
           if (tc != 0) return tc;
           return _cs(a.title, b.title);
-        case SortMode.year:
+        case SortMode.yearDesc:
           final keyA = albumIdentityKey(a);
           final keyB = albumIdentityKey(b);
           if (keyA == keyB) {
@@ -549,12 +573,10 @@ class PlaybackController {
             if (tComp != 0) return tComp;
             return a.id.compareTo(b.id);
           }
-          final ya = albumYearMap[keyA] ?? 99999;
-          final yb = albumYearMap[keyB] ?? 99999;
-          final yaVal = ya == 0 ? 99999 : ya;
-          final ybVal = yb == 0 ? 99999 : yb;
-          if (yaVal != ybVal) return yaVal.compareTo(ybVal);
-
+          final ya = albumYearMap[keyA] ?? 0;
+          final yb = albumYearMap[keyB] ?? 0;
+          final yc = compareYears(ya, yb, ascending: false);
+          if (yc != 0) return yc;
           final ac = _cs(_albumArtistFor(a), _albumArtistFor(b));
           if (ac != 0) return ac;
           final alc = _cs(a.album ?? '', b.album ?? '');
@@ -562,10 +584,9 @@ class PlaybackController {
           final tc = _compareDiscAndTrack(a, b);
           if (tc != 0) return tc;
           return _cs(a.title, b.title);
-        case SortMode.albumArtistYear:
+        case SortMode.albumArtistYearAsc:
           final ac = _cs(_albumArtistFor(a), _albumArtistFor(b));
           if (ac != 0) return ac;
-
           final keyA = albumIdentityKey(a);
           final keyB = albumIdentityKey(b);
           if (keyA == keyB) {
@@ -575,18 +596,51 @@ class PlaybackController {
             if (tComp != 0) return tComp;
             return a.id.compareTo(b.id);
           }
-
-          final ya = albumYearMap[keyA] ?? 99999;
-          final yb = albumYearMap[keyB] ?? 99999;
-          final yaVal = ya == 0 ? 99999 : ya;
-          final ybVal = yb == 0 ? 99999 : yb;
-          if (yaVal != ybVal) return yaVal.compareTo(ybVal);
-
+          final ya = albumYearMap[keyA] ?? 0;
+          final yb = albumYearMap[keyB] ?? 0;
+          final yc = compareYears(ya, yb, ascending: true);
+          if (yc != 0) return yc;
           final alc = _cs(a.album ?? '', b.album ?? '');
           if (alc != 0) return alc;
           final tc = _compareDiscAndTrack(a, b);
           if (tc != 0) return tc;
           return _cs(a.title, b.title);
+        case SortMode.albumArtistYearDesc:
+          final ac = compareSortStringsDesc(
+            _albumArtistFor(a),
+            _albumArtistFor(b),
+          );
+          if (ac != 0) return ac;
+          final keyA = albumIdentityKey(a);
+          final keyB = albumIdentityKey(b);
+          if (keyA == keyB) {
+            final tc = _compareDiscAndTrack(a, b);
+            if (tc != 0) return tc;
+            final tComp = _cs(a.title, b.title);
+            if (tComp != 0) return tComp;
+            return a.id.compareTo(b.id);
+          }
+          final ya = albumYearMap[keyA] ?? 0;
+          final yb = albumYearMap[keyB] ?? 0;
+          final yc = compareYears(ya, yb, ascending: false);
+          if (yc != 0) return yc;
+          final alc = _cs(a.album ?? '', b.album ?? '');
+          if (alc != 0) return alc;
+          final tc = _compareDiscAndTrack(a, b);
+          if (tc != 0) return tc;
+          return _cs(a.title, b.title);
+        case SortMode.durationAsc:
+          return compareDurations(a, b, ascending: true);
+        case SortMode.durationDesc:
+          return compareDurations(a, b, ascending: false);
+        case SortMode.trackAsc:
+          return compareTracks(a, b, ascending: true);
+        case SortMode.trackDesc:
+          return compareTracks(a, b, ascending: false);
+        case SortMode.mostPlayed:
+          return comparePlayCounts(a, b, playCounts, descending: true);
+        case SortMode.leastPlayed:
+          return comparePlayCounts(a, b, playCounts, descending: false);
       }
     });
 

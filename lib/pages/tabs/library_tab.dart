@@ -58,20 +58,51 @@ class LibraryTab extends StatelessWidget {
       headerHeight: isSelectionMode ? 108.0 : 180.0,
       itemHeight: 106.0,
       sortKey: controller.sortMode,
-      isNumericSort: controller.sortMode == SortMode.year,
+      isNumericSort: controller.sortMode.isNumeric,
       sectionKeyOf: (index) {
         final s = songs[index];
         final sortMode = controller.sortMode;
         switch (sortMode) {
-          case SortMode.artist:
+          case SortMode.titleAsc:
+          case SortMode.titleDesc:
+            return s.title;
+          case SortMode.albumAsc:
+          case SortMode.albumDesc:
+            return s.album ??
+                playbackController.albumMap[s.albumId]?.album ??
+                '';
+          case SortMode.artistAsc:
+          case SortMode.artistDesc:
             return s.artist ?? '';
-          case SortMode.albumArtist:
+          case SortMode.albumArtistAsc:
+          case SortMode.albumArtistDesc:
+          case SortMode.albumArtistYearAsc:
+          case SortMode.albumArtistYearDesc:
             return albumArtistFor(s);
-          case SortMode.year:
+          case SortMode.composerAsc:
+          case SortMode.composerDesc:
+            return composerFromSong(s);
+          case SortMode.genreAsc:
+          case SortMode.genreDesc:
+            return genreFromSong(s);
+          case SortMode.yearAsc:
+          case SortMode.yearDesc:
             final y = yearFromSong(s);
             return y > 0 ? '$y' : '#';
-          case SortMode.albumArtistYear:
-            return albumArtistFor(s);
+          case SortMode.durationAsc:
+          case SortMode.durationDesc:
+            final d = s.duration ?? 0;
+            if (d <= 0) return '#';
+            final m = (d / 60000).floor();
+            return '${m}m';
+          case SortMode.trackAsc:
+          case SortMode.trackDesc:
+            final t = trackFromSong(s);
+            return t > 0 ? '$t' : '#';
+          case SortMode.mostPlayed:
+          case SortMode.leastPlayed:
+            final count = controller.playCountBySongId[s.id] ?? 0;
+            return '$count';
         }
       },
       child: CustomScrollView(
