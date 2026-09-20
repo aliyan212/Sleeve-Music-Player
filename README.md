@@ -1,7 +1,7 @@
 # Sleeve Music Player
 
 <p align="center">
-  <img src="assets/branding/sleeve_icon_512.png" alt="Sleeve Music Player app icon" width="128" />
+  <img src="assets/branding/sleeve_icon_512.png" alt="Sleeve Music Player app icon" width="128" height ="128" />
 </p>
 
 ---
