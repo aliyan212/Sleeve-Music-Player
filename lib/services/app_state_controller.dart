@@ -16,7 +16,9 @@ import '../data/models/sort_mode.dart';
 import '../dialogs/folder_management_dialog.dart';
 import '../main.dart';
 import '../services/local_audio_scanner.dart';
-import '../services/playback_controller.dart';
+
+import 'settings_service.dart';
+import 'playback_controller.dart';
 import '../ui/shared/fast_artwork_widget.dart';
 import '../utils/song_sort_utils.dart';
 import 'mixins/navigation_state_mixin.dart';
@@ -722,6 +724,7 @@ class AppStateController extends ChangeNotifier
           albums,
           excludedFolders.toList(),
           includedFolders.toList(),
+          SettingsService.instance.filterShortTracks,
         ),
       );
 
@@ -770,9 +773,15 @@ class AppStateController extends ChangeNotifier
       return false;
     }
 
-    songs = songs
-        .where((song) => isIncluded(song.data) && !isExcluded(song.data))
-        .toList();
+    songs = songs.where((song) {
+      if (!isIncluded(song.data) || isExcluded(song.data)) {
+        return false;
+      }
+      if (data.filterShortTracks && song.duration != null && song.duration! < 60000) {
+        return false;
+      }
+      return true;
+    }).toList();
 
     // Sort: Album Artist → Album Identity → Year (album release) → Album name → Disc/Track
     // Keep comparisons deterministic (Dart's sort is not stable).

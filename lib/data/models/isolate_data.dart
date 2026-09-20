@@ -6,10 +6,13 @@ class IsolateData {
   final List<AlbumModel> albums;
   final List<String> excludedFolders;
   final List<String> includedFolders;
+  final bool filterShortTracks;
+
   IsolateData(
     this.songs,
     this.albums,
     this.excludedFolders,
     this.includedFolders,
+    this.filterShortTracks,
   );
 }

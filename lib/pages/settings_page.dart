@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../main.dart';
 import '../services/app_state_controller.dart';
+import '../services/settings_service.dart';
 import '../dialogs/customize_tabs_dialog.dart';
 import '../widgets/search/app_search_view.dart';
 import '../services/sleep_timer_service.dart';
@@ -78,6 +79,25 @@ class SettingsPage extends StatelessWidget {
               );
             },
           ),
+          ListenableBuilder(
+            listenable: SettingsService.instance,
+            builder: (context, _) {
+              return SwitchListTile.adaptive(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                title: const Text('Keep Screen Awake', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text(
+                  'Prevent screen from turning off while using the app',
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+                ),
+                secondary: Icon(Icons.lightbulb_rounded, color: cs.onSurfaceVariant),
+                value: SettingsService.instance.keepScreenAwake,
+                onChanged: (val) {
+                  HapticFeedback.selectionClick();
+                  SettingsService.instance.setKeepScreenAwake(val);
+                },
+              );
+            },
+          ),
           buildListTile(
             title: 'Bottom Navigation Bar',
             subtitle: 'Customize which tabs appear in the dock',
@@ -86,6 +106,25 @@ class SettingsPage extends StatelessWidget {
           ),
 
           buildSectionTitle('Library & Storage', Icons.folder_rounded),
+          ListenableBuilder(
+            listenable: SettingsService.instance,
+            builder: (context, _) {
+              return SwitchListTile.adaptive(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                title: const Text('Filter Short Tracks', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text(
+                  'Hide audio files shorter than 60 seconds (requires rescan)',
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+                ),
+                secondary: Icon(Icons.timer_off_rounded, color: cs.onSurfaceVariant),
+                value: SettingsService.instance.filterShortTracks,
+                onChanged: (val) {
+                  HapticFeedback.selectionClick();
+                  SettingsService.instance.setFilterShortTracks(val);
+                },
+              );
+            },
+          ),
           buildListTile(
             title: 'Manage Audio Folders',
             subtitle: 'Select which folders are scanned for music',
