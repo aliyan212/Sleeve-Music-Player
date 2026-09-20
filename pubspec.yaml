@@ -106,7 +106,7 @@ flutter:
 flutter_launcher_icons:
   android: "ic_launcher"
   ios: false
-  image_path: "assets/icon.png"
+  image_path: "assets/branding/sleeve_icon_512.png"
   min_sdk_android: 21
-  adaptive_icon_background: "#121A20" # Dark theme background
-  adaptive_icon_foreground: "assets/icon.png"
+  adaptive_icon_background: "#1A1A1E"
+  adaptive_icon_foreground: "assets/branding/sleeve_foreground_432.png"
