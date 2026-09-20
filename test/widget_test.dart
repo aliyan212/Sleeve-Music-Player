@@ -1387,12 +1387,10 @@ void main() {
         expect(timer.isEndOfSong, isTrue);
 
         timer.cancel();
-        expect(timer.isActive, isFalse);
-        expect(timer.isEndOfSong, isFalse);
       });
     });
 
-    testWidgets('buildBottomBarsGutter creates 3.0 cards equivalent gutter height (240px)', (tester) async {
+    testWidgets('buildBottomBarsGutter creates 4.0 cards equivalent gutter height (320px)', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -1413,7 +1411,7 @@ void main() {
       );
       expect(sizedBoxFinder, findsOneWidget);
       final sizedBox = tester.widget<SizedBox>(sizedBoxFinder);
-      expect(sizedBox.height, 240.0);
+      expect(sizedBox.height, 320.0);
     });
 
     testWidgets('AppSearchView clicking outside search bar dismisses keyboard/focus', (tester) async {

@@ -20,9 +20,9 @@ Widget buildBottomBarsGutter(
   bool includeMiniPlayer = true,
   double extraPadding = 0,
 }) {
-  // Gutter space increased by 1.5 cards (from 1.5 cards to 3.0 cards height, standard card is 80px -> 240px total).
+  // Gutter space increased by another 1 card as per user request (3.0 -> 4.0 cards)
   const double cardHeight = 80.0;
-  const double gutterHeight = cardHeight * 3.0;
+  const double gutterHeight = cardHeight * 4.0;
   return SliverToBoxAdapter(
     child: SizedBox(height: gutterHeight + extraPadding),
   );

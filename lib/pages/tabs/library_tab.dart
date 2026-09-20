@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import '../../services/app_state_controller.dart';
 import '../../data/models/sort_mode.dart';
-import '../../main.dart';
+
 import 'package:flutter/services.dart';
 import '../../services/playback_controller.dart';
 import '../../dialogs/batch_tag_editor_dialog.dart';
@@ -15,8 +15,9 @@ import '../../ui/shared/app_empty_state.dart';
 import '../../utils/song_sort_utils.dart';
 import '../../widgets/search/app_search_view.dart';
 import '../../ui/shared/app_sort_bottom_sheet.dart';
+import '../settings_page.dart';
 
-enum AppMenuAction { selectTracks, refresh, manageFolders, toggleTheme, about, quit }
+enum AppMenuAction { selectTracks, refresh, settings, about, quit }
 
 class LibraryTab extends StatelessWidget {
   final ScrollController scrollController;
@@ -301,11 +302,11 @@ class LibraryTab extends StatelessWidget {
                         case AppMenuAction.refresh:
                           appState.ensureLibraryPermissionAndLoad();
                           break;
-                        case AppMenuAction.manageFolders:
-                          appState.openManageFoldersDialog(context);
-                          break;
-                        case AppMenuAction.toggleTheme:
-                          themeNotifier.toggle();
+                        case AppMenuAction.settings:
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const SettingsPage()),
+                          );
                           break;
                         case AppMenuAction.about:
                           appState.openAboutPage(context);
@@ -332,17 +333,10 @@ class LibraryTab extends StatelessWidget {
                         ),
                       ),
                       PopupMenuItem(
-                        value: AppMenuAction.manageFolders,
+                        value: AppMenuAction.settings,
                         child: menuLabel(
-                          Icons.folder_copy_rounded,
-                          'Manage Folders',
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: AppMenuAction.toggleTheme,
-                        child: menuLabel(
-                          Icons.palette_rounded,
-                          themeNotifier.themeMenuLabel,
+                          Icons.settings_rounded,
+                          'Settings',
                         ),
                       ),
                       const PopupMenuDivider(),

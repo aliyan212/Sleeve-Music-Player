@@ -52,6 +52,86 @@ class SearchCategoryManager {
       await prefs.setStringList(_prefKey, categories.toList());
     } catch (_) {}
   }
+
+  static void showSettingsSheet(BuildContext context, {VoidCallback? onChanged}) async {
+    final initialCategories = await getEnabledCategories();
+    final Set<String> enabledCategories = Set.from(initialCategories);
+
+    if (!context.mounted) {
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            Widget buildSwitch(String key, String label, IconData icon) {
+              return SwitchListTile.adaptive(
+                title: Text(label),
+                secondary: Icon(icon),
+                value: enabledCategories.contains(key),
+                onChanged: (val) {
+                  if (!val && enabledCategories.length <= 1) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('At least one category must remain active.')),
+                    );
+                    return;
+                  }
+                  HapticFeedback.selectionClick();
+                  setSheetState(() {
+                    if (val) {
+                      enabledCategories.add(key);
+                    } else {
+                      enabledCategories.remove(key);
+                    }
+                  });
+                  saveEnabledCategories(enabledCategories);
+                  onChanged?.call();
+                },
+              );
+            }
+            
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Text('Search Categories', style: Theme.of(context).textTheme.titleLarge),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        buildSwitch('tracks', 'Tracks', Icons.music_note_rounded),
+                        buildSwitch('albums', 'Albums', Icons.album_rounded),
+                        buildSwitch('artists', 'Artists', Icons.person_rounded),
+                        buildSwitch('albumArtists', 'Album Artists', Icons.group_rounded),
+                        buildSwitch('composers', 'Composers', Icons.draw_rounded),
+                        buildSwitch('genres', 'Genres', Icons.style_rounded),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setSheetState(() {
+                        enabledCategories.clear();
+                        enabledCategories.addAll(defaultCategories);
+                      });
+                      saveEnabledCategories(enabledCategories);
+                      onChanged?.call();
+                    },
+                    child: const Text('Reset to Defaults'),
+                  ),
+                ],
+              ),
+            );
+          }
+        );
+      }
+    );
+  }
 }
 
 class SearchHistoryManager {
@@ -293,71 +373,9 @@ class _AppSearchViewState extends State<AppSearchView> {
   }
   
   void _showCategoryFilterSheet() {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            Widget buildSwitch(String key, String label, IconData icon) {
-              return SwitchListTile.adaptive(
-                title: Text(label),
-                secondary: Icon(icon),
-                value: _enabledCategories.contains(key),
-                onChanged: (val) {
-                  if (!val && _enabledCategories.length <= 1) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('At least one category must remain active.')),
-                    );
-                    return;
-                  }
-                  HapticFeedback.selectionClick();
-                  setSheetState(() {
-                    if (val) _enabledCategories.add(key);
-                    else _enabledCategories.remove(key);
-                  });
-                  setState(() {});
-                  SearchCategoryManager.saveEnabledCategories(_enabledCategories);
-                },
-              );
-            }
-            
-            return SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: Text('Search Categories', style: Theme.of(context).textTheme.titleLarge),
-                  ),
-                  Expanded(
-                    child: ListView(
-                      children: [
-                        buildSwitch('tracks', 'Tracks', Icons.music_note_rounded),
-                        buildSwitch('albums', 'Albums', Icons.album_rounded),
-                        buildSwitch('artists', 'Artists', Icons.person_rounded),
-                        buildSwitch('albumArtists', 'Album Artists', Icons.group_rounded),
-                        buildSwitch('composers', 'Composers', Icons.draw_rounded),
-                        buildSwitch('genres', 'Genres', Icons.style_rounded),
-                      ],
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      setSheetState(() {
-                        _enabledCategories.addAll(SearchCategoryManager.defaultCategories);
-                      });
-                      setState(() {});
-                      SearchCategoryManager.saveEnabledCategories(_enabledCategories);
-                    },
-                    child: const Text('Reset to Defaults'),
-                  ),
-                ],
-              ),
-            );
-          }
-        );
-      }
+    SearchCategoryManager.showSettingsSheet(
+      context, 
+      onChanged: _loadCategories,
     );
   }
 
