@@ -43,7 +43,6 @@ class _QueuePageState extends State<QueuePage> {
   StreamSubscription<SequenceState?>? _sequenceSub;
   StreamSubscription<bool>? _shuffleSub;
   StreamSubscription<List<int>>? _shuffleIndicesSub;
-  StreamSubscription<PlayerState>? _playerStateSub;
   bool _isReordering = false;
   bool _ignoreSequenceUpdates = false;
   bool _shuffleEnabled = false;
@@ -177,9 +176,6 @@ class _QueuePageState extends State<QueuePage> {
       }
     });
 
-    _playerStateSub = widget.player.playerStateStream.listen((_) {
-      if (mounted) setState(() {});
-    });
   }
 
   @override
@@ -187,7 +183,6 @@ class _QueuePageState extends State<QueuePage> {
     _sequenceSub?.cancel();
     _shuffleSub?.cancel();
     _shuffleIndicesSub?.cancel();
-    _playerStateSub?.cancel();
     super.dispose();
   }
 
@@ -588,33 +583,39 @@ class _QueuePageState extends State<QueuePage> {
 
   Widget _buildCurrentSongTile(SongModel song) {
     final cs = Theme.of(context).colorScheme;
-    final isPlaying = widget.player.playing;
-
-    return UniversalSongTile(
-      song: song,
-      isCurrent: true,
-      isPlaying: isPlaying,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      showMetaDuration: false,
-      trailing: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: cs.tertiaryContainer,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Icon(
-          isPlaying ? Icons.graphic_eq_rounded : Icons.pause_rounded,
-          color: cs.onTertiaryContainer,
-          size: 20,
-        ),
-      ),
-      onTap: () async {
-        HapticFeedback.lightImpact();
-        if (widget.player.playing) {
-          await widget.player.pause();
-        } else {
-          unawaited(widget.player.play());
-        }
+    
+    return StreamBuilder<PlayerState>(
+      stream: widget.player.playerStateStream,
+      builder: (context, snapshot) {
+        final isPlaying = widget.player.playing;
+        
+        return UniversalSongTile(
+          song: song,
+          isCurrent: true,
+          isPlaying: isPlaying,
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          showMetaDuration: false,
+          trailing: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: cs.tertiaryContainer,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(
+              isPlaying ? Icons.graphic_eq_rounded : Icons.pause_rounded,
+              color: cs.onTertiaryContainer,
+              size: 20,
+            ),
+          ),
+          onTap: () async {
+            HapticFeedback.lightImpact();
+            if (widget.player.playing) {
+              await widget.player.pause();
+            } else {
+              unawaited(widget.player.play());
+            }
+          },
+        );
       },
     );
   }

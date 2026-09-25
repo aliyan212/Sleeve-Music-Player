@@ -394,7 +394,7 @@ class LocalAudioScanner {
   Future<Uint8List?> getArtworkBytes(int id, {ArtworkType type = ArtworkType.AUDIO}) async {
     // 1. Check CachingService memory cache
     final key = '${type.name}_$id';
-    final cached = CachingService().thumbnailCache[key];
+    final cached = thumbnailCache[key];
     if (cached != null) return cached.isEmpty ? null : cached;
 
     String? filePath;
@@ -439,8 +439,8 @@ class LocalAudioScanner {
 
     artworkBytes ??= Uint8List(0);
     
-    CachingService().thumbnailCache[key] = artworkBytes;
-    CachingService().highResCache[key] = artworkBytes;
+    thumbnailCache[key] = artworkBytes;
+    highResCache[key] = artworkBytes;
 
     return artworkBytes.isEmpty ? null : artworkBytes;
   }

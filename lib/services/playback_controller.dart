@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
@@ -311,6 +312,20 @@ class PlaybackController {
   // ── URI / media-item helpers ───────────────────────────────────────
 
   Uri songUri(SongModel song) {
+    if (!kIsWeb) {
+      final data = song.data;
+      if (data.isNotEmpty) {
+        if (data.startsWith('content:') || data.startsWith('file:')) {
+          return Uri.parse(data);
+        }
+        try {
+          final file = File(data);
+          if (file.existsSync()) {
+            return Uri.file(data);
+          }
+        } catch (_) {}
+      }
+    }
     final primary = song.uri;
     if (primary != null && primary.isNotEmpty) {
       if (primary.startsWith('content:') || primary.startsWith('file:')) {

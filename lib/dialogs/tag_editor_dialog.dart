@@ -13,6 +13,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../services/local_audio_scanner.dart';
 import '../services/app_state_controller.dart';
 import '../ui/shared/fast_artwork_widget.dart';
+import '../utils/cover_art_utils.dart';
 import '../utils/tag_write_access.dart';
 
 
@@ -201,9 +202,10 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
       }
 
       final mime = _detectMimeType(bytes, file.name);
+      final compressed = await compressCoverArtIfNeeded(bytes);
       if (!mounted) return;
       setState(() {
-        _newCoverBytes = bytes;
+        _newCoverBytes = compressed;
         _newCoverMime = mime;
         _removeCoverRequested = false;
       });
@@ -518,8 +520,6 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
     final textColorTertiary = cs.onSurfaceVariant.withValues(alpha: 0.72);
 
     return Dialog(
-      backgroundColor: bgColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
         child: Column(
@@ -858,16 +858,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
           labelText: label,
           labelStyle: TextStyle(color: labelColor),
           prefixIcon: Icon(icon, color: iconColor, size: 20),
-          filled: true,
-          fillColor: fillColor,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.3)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: cs.primary, width: 1.5),
-          ),
+          // Inherit filled, fillColor, and expressive rounded borders from app_theme.dart
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 14,

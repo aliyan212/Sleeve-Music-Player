@@ -112,10 +112,6 @@ class SleepTimerService extends ChangeNotifier {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      backgroundColor: cs.surfaceContainerLow,
       builder: (context) {
         return ListenableBuilder(
           listenable: this,

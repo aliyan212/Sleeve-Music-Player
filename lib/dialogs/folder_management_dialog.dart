@@ -145,8 +145,6 @@ void showManageFoldersDialog({
                         HapticFeedback.selectionClick();
                         activeTab = i;
                       },
-                      labelColor: cs.primary,
-                      unselectedLabelColor: cs.onSurfaceVariant,
                       tabs: const [
                         Tab(icon: Icon(Icons.folder_open_rounded), text: 'Included'),
                         Tab(icon: Icon(Icons.folder_off_rounded), text: 'Excluded'),

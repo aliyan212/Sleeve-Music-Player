@@ -161,6 +161,21 @@ ThemeData buildTheme(ColorScheme scheme, Brightness brightness) {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         dividerColor: scheme.outlineVariant.withValues(alpha: 0.35),
       ),
+      tabBarTheme: TabBarTheme(
+        labelColor: scheme.primary,
+        unselectedLabelColor: scheme.onSurfaceVariant,
+        indicatorColor: scheme.primary,
+        indicatorSize: TabBarIndicatorSize.label,
+        dividerColor: scheme.outlineVariant.withValues(alpha: 0.2),
+        labelStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold),
+        unselectedLabelStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: scheme.primaryContainer,
+        foregroundColor: scheme.onPrimaryContainer,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        elevation: 4,
+      ),
       cardTheme: CardThemeData(
         color: scheme.surfaceContainerLow,
         elevation: 0,

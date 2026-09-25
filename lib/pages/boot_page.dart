@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
 import '../app_audio_handler.dart';
 import '../main.dart';
-import '../platform_exit.dart';
 import '../services/app_local_store.dart';
 import '../services/loved_songs_service.dart';
 import '../services/settings_service.dart';
@@ -66,7 +65,7 @@ class _BootAppState extends State<BootApp> {
 
       _handlerEventSub ??= audioHandler?.customEvent.listen((event) async {
         if (event is Map && event['type'] == 'exit') {
-          await PlatformExit.quit();
+          await SystemNavigator.pop();
         }
       });
 

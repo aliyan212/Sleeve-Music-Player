@@ -114,14 +114,6 @@ class AppEmptyState extends StatelessWidget {
                   actionLabel!,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
                 ),
               ),
             ],

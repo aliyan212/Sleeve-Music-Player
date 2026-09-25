@@ -27,6 +27,7 @@ import '../services/loved_songs_service.dart';
 import '../services/app_state_controller.dart';
 import '../widgets/now_playing/now_playing_mesh_background.dart';
 import '../widgets/now_playing/now_playing_landscape_view.dart';
+import '../ui/shared/bouncy_pressable.dart';
 
 class NowPlayingPage extends StatefulWidget {
   final AudioPlayer player;
@@ -1152,8 +1153,8 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   const SizedBox(height: 6),
-                                  GestureDetector(
-                                    onTap: () {
+                                  BouncyPressable(
+                                    onPressed: () {
                                       HapticFeedback.selectionClick();
                                       _openArtistDetail();
                                     },
@@ -1175,8 +1176,8 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-                                  GestureDetector(
-                                    onTap: () {
+                                  BouncyPressable(
+                                    onPressed: () {
                                       HapticFeedback.selectionClick();
                                       _openAlbumDetail();
                                     },

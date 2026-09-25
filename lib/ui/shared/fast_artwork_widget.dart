@@ -13,8 +13,8 @@ String getArtworkKey(int id, ArtworkType type, int size) =>
 
 LinkedHashMap<String, Uint8List?> artworkCacheForSize(int size) {
   return size > 400
-      ? CachingService().highResCache
-      : CachingService().thumbnailCache;
+      ? highResCache
+      : thumbnailCache;
 }
 
 Uint8List? peekCachedArtworkBytesByKey(String key, int size) {
@@ -47,40 +47,40 @@ bool _cacheKeyMatchesId(String key, int id) {
 }
 
 void evictArtworkCache(int id) {
-  CachingService().thumbnailCache.removeWhere((k, _) => _cacheKeyMatchesId(k, id));
-  CachingService().highResCache.removeWhere((k, _) => _cacheKeyMatchesId(k, id));
+  thumbnailCache.removeWhere((k, _) => _cacheKeyMatchesId(k, id));
+  highResCache.removeWhere((k, _) => _cacheKeyMatchesId(k, id));
   _inFlightArtwork.removeWhere((k, _) => _cacheKeyMatchesId(k, id));
   notifyArtworkChanged();
 }
 
 void clearArtworkCache() {
-  CachingService().thumbnailCache.clear();
-  CachingService().highResCache.clear();
+  thumbnailCache.clear();
+  highResCache.clear();
   _inFlightArtwork.clear();
   notifyArtworkChanged();
 }
 
 void updateArtworkCache(int id, Uint8List? bytes, {int? albumId}) {
-  CachingService().thumbnailCache.removeWhere((k, _) => _cacheKeyMatchesId(k, id));
-  CachingService().highResCache.removeWhere((k, _) => _cacheKeyMatchesId(k, id));
+  thumbnailCache.removeWhere((k, _) => _cacheKeyMatchesId(k, id));
+  highResCache.removeWhere((k, _) => _cacheKeyMatchesId(k, id));
   _inFlightArtwork.removeWhere((k, _) => _cacheKeyMatchesId(k, id));
 
   if (albumId != null && albumId > 0) {
-    CachingService().thumbnailCache.removeWhere((k, _) => _cacheKeyMatchesId(k, albumId));
-    CachingService().highResCache.removeWhere((k, _) => _cacheKeyMatchesId(k, albumId));
+    thumbnailCache.removeWhere((k, _) => _cacheKeyMatchesId(k, albumId));
+    highResCache.removeWhere((k, _) => _cacheKeyMatchesId(k, albumId));
     _inFlightArtwork.removeWhere((k, _) => _cacheKeyMatchesId(k, albumId));
   }
 
   if (bytes != null && bytes.isNotEmpty) {
-    storeCachedArtworkBytesByKey(getArtworkKey(id, ArtworkType.AUDIO, 200), 200, bytes);
+    storeCachedArtworkBytesByKey(getArtworkKey(id, ArtworkType.AUDIO, 400), 400, bytes);
     storeCachedArtworkBytesByKey(getArtworkKey(id, ArtworkType.AUDIO, 900), 900, bytes);
-    CachingService().thumbnailCache['${ArtworkType.AUDIO.name}_$id'] = bytes;
-    CachingService().highResCache['${ArtworkType.AUDIO.name}_$id'] = bytes;
+    thumbnailCache['${ArtworkType.AUDIO.name}_$id'] = bytes;
+    highResCache['${ArtworkType.AUDIO.name}_$id'] = bytes;
     if (albumId != null && albumId > 0) {
-      storeCachedArtworkBytesByKey(getArtworkKey(albumId, ArtworkType.ALBUM, 200), 200, bytes);
+      storeCachedArtworkBytesByKey(getArtworkKey(albumId, ArtworkType.ALBUM, 400), 400, bytes);
       storeCachedArtworkBytesByKey(getArtworkKey(albumId, ArtworkType.ALBUM, 900), 900, bytes);
-      CachingService().thumbnailCache['${ArtworkType.ALBUM.name}_$albumId'] = bytes;
-      CachingService().highResCache['${ArtworkType.ALBUM.name}_$albumId'] = bytes;
+      thumbnailCache['${ArtworkType.ALBUM.name}_$albumId'] = bytes;
+      highResCache['${ArtworkType.ALBUM.name}_$albumId'] = bytes;
     }
   }
   notifyArtworkChanged();
@@ -89,7 +89,7 @@ void updateArtworkCache(int id, Uint8List? bytes, {int? albumId}) {
 bool hasCachedArtworkBytes(
   int id, {
   ArtworkType type = ArtworkType.AUDIO,
-  int size = 200,
+  int size = 400,
 }) {
   return artworkCacheForSize(size).containsKey(getArtworkKey(id, type, size));
 }
@@ -97,7 +97,7 @@ bool hasCachedArtworkBytes(
 Uint8List? peekCachedArtworkBytes(
   int id, {
   ArtworkType type = ArtworkType.AUDIO,
-  int size = 200,
+  int size = 400,
 }) {
   final exact = peekCachedArtworkBytesByKey(getArtworkKey(id, type, size), size);
   if (exact != null && exact.isNotEmpty) return exact;
@@ -106,9 +106,9 @@ Uint8List? peekCachedArtworkBytes(
   // return any cached resolution for this id and type immediately
   // to avoid blank frames while the target resolution is loading.
   final legacyKey = '${type.name}_$id';
-  final thumbLegacy = CachingService().thumbnailCache[legacyKey];
+  final thumbLegacy = thumbnailCache[legacyKey];
   if (thumbLegacy != null && thumbLegacy.isNotEmpty) return thumbLegacy;
-  final highLegacy = CachingService().highResCache[legacyKey];
+  final highLegacy = highResCache[legacyKey];
   if (highLegacy != null && highLegacy.isNotEmpty) return highLegacy;
 
   for (final s in const [300, 200, 400, 500, 900]) {
@@ -125,7 +125,7 @@ final Map<String, Future<Uint8List?>> _inFlightArtwork = {};
 Future<Uint8List?> queryArtworkBytesCached(
   int id, {
   ArtworkType type = ArtworkType.AUDIO,
-  int size = 200,
+  int size = 400,
   int quality = 80,
 }) async {
   final key = getArtworkKey(id, type, size);
@@ -189,7 +189,7 @@ class FastArtworkWidget extends StatefulWidget {
     required this.width,
     required this.height,
     required this.nullArtworkWidget,
-    this.size = 300,
+    this.size = 400,
     this.quality = 95,
     this.artworkFit = BoxFit.cover,
     this.keepOldArtwork = true,

@@ -44,6 +44,7 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       }
     });
     _currentIndexSub = player.currentIndexStream.listen((_) {
+      _handleSequenceState(player.sequenceState);
       _broadcastState();
     });
     _sequenceStateSub = player.sequenceStateStream.listen(_handleSequenceState);
@@ -407,19 +408,41 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
+  int _queueWindowStartIndex = 0;
+  static const int _kQueueWindowRadius = 25;
+
   void _handleSequenceState(SequenceState? state) {
     if (_suspendStateUpdates) return;
     final seq = state?.sequence ?? const <IndexedAudioSource>[];
-    final items = seq
+    if (seq.isEmpty) {
+      _queueWindowStartIndex = 0;
+      queue.add(const <MediaItem>[]);
+      return;
+    }
+
+    final totalLength = seq.length;
+    final idx = state?.currentIndex ?? 0;
+
+    // Window around currentIndex (±25 tracks, ~50 total) to prevent Android
+    // TransactionTooLargeException across Binder IPC when playlists contain
+    // hundreds or thousands of tracks.
+    final start = (idx - _kQueueWindowRadius).clamp(0, totalLength - 1);
+    final end = (idx + _kQueueWindowRadius + 1).clamp(start + 1, totalLength);
+    _queueWindowStartIndex = start;
+
+    final windowSources = seq.sublist(start, end);
+    final items = windowSources
         .map(_mediaItemFromSource)
         .whereType<MediaItem>()
         .toList(growable: false);
 
     queue.add(items);
 
-    final idx = state?.currentIndex;
-    if (idx != null && idx >= 0 && idx < items.length) {
-      mediaItem.add(items[idx]);
+    if (idx >= 0 && idx < totalLength) {
+      final currentItem = _mediaItemFromSource(seq[idx]);
+      if (currentItem != null) {
+        mediaItem.add(currentItem);
+      }
     }
   }
 
@@ -513,7 +536,9 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         updatePosition: player.position,
         bufferedPosition: player.bufferedPosition,
         speed: player.speed,
-        queueIndex: player.currentIndex,
+        queueIndex: (player.currentIndex != null && queue.hasValue && queue.value.isNotEmpty)
+            ? (player.currentIndex! - _queueWindowStartIndex).clamp(0, queue.value.length - 1)
+            : null,
         repeatMode: _repeatModeFromLoop(player.loopMode),
         shuffleMode: player.shuffleModeEnabled
             ? AudioServiceShuffleMode.all
@@ -605,7 +630,7 @@ class AppAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> skipToQueueItem(int index) =>
-      player.seek(Duration.zero, index: index);
+      player.seek(Duration.zero, index: _queueWindowStartIndex + index);
 
   @override
   Future<dynamic> customAction(

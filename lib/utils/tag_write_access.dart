@@ -161,7 +161,11 @@ Future<void> writeMp3Id3YearAndId3v1({
 }
 
 Future<void> _syncMp3Id3v2Year(File file, int year) async {
-  final raf = await file.open(mode: FileMode.append);
+  // IMPORTANT: FileMode.write (O_WRONLY) is required here, NOT FileMode.append
+  // (O_APPEND). On POSIX, O_APPEND causes every write() syscall to move the
+  // file offset to EOF before writing, completely ignoring setPosition(). This
+  // was the root cause of file size multiplication on batch tag edit.
+  final raf = await file.open(mode: FileMode.write);
   try {
     final length = await raf.length();
     if (length < 10) return;
@@ -609,23 +613,32 @@ Future<void> _syncMp3Id3v1({
   String? album,
   int? track,
 }) async {
-  final raf = await file.open(mode: FileMode.append);
-  try {
-    final length = await raf.length();
-    final yearBytes = ascii.encode(year.toString().padLeft(4, '0').substring(0, 4));
+  final yearBytes = ascii.encode(year.toString().padLeft(4, '0').substring(0, 4));
 
-    if (length >= 128) {
-      await raf.setPosition(length - 128);
-      final trailer = await raf.read(128);
-      if (trailer.length == 128 &&
-          trailer[0] == 0x54 && // 'T'
-          trailer[1] == 0x41 && // 'A'
-          trailer[2] == 0x47) { // 'G'
+  // First, read-only pass to determine if a trailer exists.
+  final length = await file.length();
+  if (length >= 128) {
+    final rofRead = await file.open(mode: FileMode.read);
+    Uint8List trailer;
+    try {
+      await rofRead.setPosition(length - 128);
+      trailer = await rofRead.read(128);
+    } finally {
+      try { await rofRead.close(); } catch (_) {}
+    }
+
+    if (trailer.length == 128 &&
+        trailer[0] == 0x54 && // 'T'
+        trailer[1] == 0x41 && // 'A'
+        trailer[2] == 0x47) { // 'G'
+      // Trailer exists: overwrite fields in-place using FileMode.write (NOT
+      // append — O_APPEND ignores setPosition on POSIX).
+      final raf = await file.open(mode: FileMode.write);
+      try {
         if (year > 0 && year <= 9999) {
           await raf.setPosition(length - 128 + 93);
           await raf.writeFrom(yearBytes);
         }
-
         if (title != null && title.isNotEmpty) {
           await raf.setPosition(length - 128 + 3);
           await raf.writeFrom(_id3v1String(title, 30));
@@ -642,39 +655,43 @@ Future<void> _syncMp3Id3v1({
           await raf.setPosition(length - 128 + 125);
           await raf.writeFrom(Uint8List.fromList([0, track]));
         }
-        return;
+      } finally {
+        try { await raf.close(); } catch (_) {}
       }
+      return;
     }
+  }
 
-    // No ID3v1 trailer: construct 128-byte block and append to EOF
-    final id3v1 = Uint8List(128);
-    // Header: "TAG"
-    id3v1[0] = 0x54;
-    id3v1[1] = 0x41;
-    id3v1[2] = 0x47;
+  // No ID3v1 trailer: construct 128-byte block and append to EOF.
+  // This is the ONLY legitimate use of append here — we're adding new bytes
+  // to the end of the file, not performing an in-place seek-and-write.
+  final id3v1 = Uint8List(128);
+  // Header: "TAG"
+  id3v1[0] = 0x54;
+  id3v1[1] = 0x41;
+  id3v1[2] = 0x47;
 
-    // Title (30 bytes, offset 3..33)
-    id3v1.setRange(3, 33, _id3v1String(title ?? '', 30));
-    // Artist (30 bytes, offset 33..63)
-    id3v1.setRange(33, 63, _id3v1String(artist ?? '', 30));
-    // Album (30 bytes, offset 63..93)
-    id3v1.setRange(63, 93, _id3v1String(album ?? '', 30));
-    // Year (4 bytes, offset 93..97)
-    id3v1.setRange(93, 97, yearBytes);
-    // Comment: 28 zero bytes (offset 97..125)
-    // ID3v1.1 marker: byte 125 = 0
-    id3v1[125] = 0;
-    // Track number: byte 126
-    id3v1[126] = (track != null && track > 0 && track <= 255) ? track : 0;
-    // Genre: byte 127 = 255 (unknown)
-    id3v1[127] = 0xFF;
+  // Title (30 bytes, offset 3..33)
+  id3v1.setRange(3, 33, _id3v1String(title ?? '', 30));
+  // Artist (30 bytes, offset 33..63)
+  id3v1.setRange(33, 63, _id3v1String(artist ?? '', 30));
+  // Album (30 bytes, offset 63..93)
+  id3v1.setRange(63, 93, _id3v1String(album ?? '', 30));
+  // Year (4 bytes, offset 93..97)
+  id3v1.setRange(93, 97, yearBytes);
+  // Comment: 28 zero bytes (offset 97..125)
+  // ID3v1.1 marker: byte 125 = 0
+  id3v1[125] = 0;
+  // Track number: byte 126
+  id3v1[126] = (track != null && track > 0 && track <= 255) ? track : 0;
+  // Genre: byte 127 = 255 (unknown)
+  id3v1[127] = 0xFF;
 
-    await raf.setPosition(length);
+  final raf = await file.open(mode: FileMode.append);
+  try {
     await raf.writeFrom(id3v1);
   } finally {
-    try {
-      await raf.close();
-    } catch (_) {}
+    try { await raf.close(); } catch (_) {}
   }
 }
 

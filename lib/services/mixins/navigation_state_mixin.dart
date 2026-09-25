@@ -13,7 +13,6 @@ import '../../pages/album_page.dart';
 import '../../pages/artist_page.dart';
 import '../../pages/genre_page.dart';
 import '../../pages/now_playing_page.dart';
-import '../../platform_exit.dart';
 import '../../utils/song_sort_utils.dart';
 import '../../widgets/search/app_search_view.dart';
 import '../playback_controller.dart';
@@ -210,7 +209,7 @@ mixin NavigationStateMixin on ChangeNotifier {
     );
 
     if (shouldQuit == true) {
-      await PlatformExit.quit();
+      await SystemNavigator.pop();
     }
   }
 

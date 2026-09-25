@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,7 +9,6 @@ import 'package:just_audio/just_audio.dart';
 import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
 import '../services/playback_controller.dart';
-import '../utils/file_ops.dart';
 import '../utils/palette_compute.dart';
 import '../ui/shared/fast_artwork_widget.dart';
 import '../utils/format_utils.dart';
@@ -363,7 +363,7 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
     final sep = dir.contains('\\') ? '\\' : '/';
     final basePath = dir.endsWith(sep) ? dir : '$dir$sep';
     var path = '$basePath$base.m3u';
-    if (await fileExists(path)) {
+    if (await File(path).exists()) {
       final stamp = DateTime.now().millisecondsSinceEpoch;
       path = '$basePath${base}_$stamp.m3u';
     }
@@ -376,8 +376,8 @@ class UserPlaylistPageState extends State<UserPlaylistPage> {
       lines.add('#EXTINF:$seconds,$info');
       lines.add(s.data);
     }
-
-    await writeFile(path, lines.join('\n'));
+    
+    await File(path).writeAsString(lines.join('\n'));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

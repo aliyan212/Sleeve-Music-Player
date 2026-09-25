@@ -56,10 +56,6 @@ Future<T?> showAppActionSheet<T>({
     context: context,
     showDragHandle: false, // We render our standardized 32x4 pill handle
     isScrollControlled: true,
-    backgroundColor: cs.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
     builder: (sheetContext) {
       return SafeArea(
         child: ConstrainedBox(

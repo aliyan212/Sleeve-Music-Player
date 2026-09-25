@@ -9,10 +9,6 @@ Future<void> showCustomizeTabsDialog(BuildContext context) {
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    backgroundColor: Theme.of(context).colorScheme.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-    ),
     builder: (context) => const _CustomizeTabsSheet(),
   );
 }

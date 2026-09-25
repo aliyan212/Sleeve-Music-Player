@@ -38,10 +38,6 @@ Future<void> showAppSortBottomSheet<T>({
     context: context,
     showDragHandle: false,
     isScrollControlled: true,
-    backgroundColor: cs.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-    ),
     builder: (sheetContext) {
       // Group options by section if applicable
       final sections = <String?, List<AppSortOption<T>>>{};

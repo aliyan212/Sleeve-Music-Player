@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:audiotags/audiotags.dart';
 import 'package:file_picker/file_picker.dart';
@@ -11,6 +12,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import '../services/local_audio_scanner.dart';
 import '../services/app_state_controller.dart';
 import '../ui/shared/fast_artwork_widget.dart';
+import '../utils/cover_art_utils.dart';
 import '../utils/song_sort_utils.dart';
 import '../utils/tag_write_access.dart';
 
@@ -311,9 +313,13 @@ class _BatchTagEditorDialogState extends State<BatchTagEditorDialog> {
       }
 
       final mime = _detectMimeType(bytes, file.name);
+      // Compress large artwork before embedding. Without this, a 12 MB photo
+      // embedded into every track in the batch causes file size to multiply
+      // by 4–10x per tag edit.
+      final compressed = await compressCoverArtIfNeeded(bytes);
       if (!mounted) return;
       setState(() {
-        _newCoverBytes = bytes;
+        _newCoverBytes = compressed;
         _newCoverMime = mime;
         _coverAction = CoverAction.replace;
       });
@@ -622,7 +628,6 @@ class _BatchTagEditorDialogState extends State<BatchTagEditorDialog> {
                   fontSize: 11,
                 ),
                 isDense: true,
-                border: const OutlineInputBorder(),
               ),
               onChanged: (val) {
                 if (!isChecked) {
@@ -644,8 +649,6 @@ class _BatchTagEditorDialogState extends State<BatchTagEditorDialog> {
     final repSong = widget.songs.isNotEmpty ? widget.songs.first : null;
 
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520, maxHeight: 720),
         child: Padding(

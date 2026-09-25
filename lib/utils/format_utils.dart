@@ -1,9 +1,13 @@
 
 String formatTime(int? milliseconds) {
   if (milliseconds == null || milliseconds < 0) return "0:00";
-  int totalSeconds = (milliseconds / 1000).truncate();
-  int minutes = (totalSeconds / 60).truncate();
-  int seconds = totalSeconds % 60;
+  final int totalSeconds = (milliseconds / 1000).truncate();
+  final int hours = totalSeconds ~/ 3600;
+  final int minutes = (totalSeconds % 3600) ~/ 60;
+  final int seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return "$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}";
+  }
   return "$minutes:${seconds.toString().padLeft(2, '0')}";
 }
 

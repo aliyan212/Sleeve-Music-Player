@@ -308,9 +308,7 @@ class _LyricsEditorDialogState extends State<LyricsEditorDialog> {
     final textAreaBorder = cs.outlineVariant.withValues(alpha: 0.45);
 
     return Dialog.fullscreen(
-      backgroundColor: bgColor,
       child: Scaffold(
-        backgroundColor: bgColor,
         resizeToAvoidBottomInset: true,
         appBar: AppBar(
           backgroundColor: headerBgColor,

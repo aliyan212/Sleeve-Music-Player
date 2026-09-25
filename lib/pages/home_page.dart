@@ -123,24 +123,29 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _animatedBottomBars() {
-    return AnimatedSlide(
-      offset: _appState.isSelectionMode ? const Offset(0, 1) : Offset.zero,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      child: AnimatedOpacity(
-        opacity: _appState.isSelectionMode ? 0.0 : 1.0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-        child: buildDetailBottomBars(
-          context: context,
-          player: playbackController.player,
-          songs: _appState.songs,
-          currentIndex: playbackController.currentIndex,
-          onQueueChanged: (_) {},
-          onOpenNowPlaying: (song) => _appState.openNowPlaying(context, song),
-          selectedTabIndex: _appState.selectedTabIndex,
-          onNavigateTab: _appState.selectTab,
-          enableHero: true,
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 800),
+        child: AnimatedSlide(
+          offset: _appState.isSelectionMode ? const Offset(0, 1) : Offset.zero,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          child: AnimatedOpacity(
+            opacity: _appState.isSelectionMode ? 0.0 : 1.0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            child: buildDetailBottomBars(
+              context: context,
+              player: playbackController.player,
+              songs: _appState.songs,
+              currentIndex: playbackController.currentIndex,
+              onQueueChanged: (_) {},
+              onOpenNowPlaying: (song) => _appState.openNowPlaying(context, song),
+              selectedTabIndex: _appState.selectedTabIndex,
+              onNavigateTab: _appState.selectTab,
+              enableHero: true,
+            ),
+          ),
         ),
       ),
     );
@@ -181,9 +186,12 @@ class _MyHomePageState extends State<MyHomePage> {
                     ))
             : _appState.isLoading
               ? const Center(child: CircularProgressIndicator())
-              : Stack(
-                  fit: StackFit.expand,
-                  children: [
+              : Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
                     IgnorePointer(
                       ignoring: _appState.inlineDetailContent != null,
                       child: Listener(
@@ -281,6 +289,8 @@ class _MyHomePageState extends State<MyHomePage> {
                     ),
                   ],
                 ),
+              ),
+            ),
       ),
     );
   }

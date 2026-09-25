@@ -154,10 +154,6 @@ class NowPlayingHeader extends StatelessWidget {
                   foregroundColor: iconFgColor,
                 ),
                 tooltip: 'More actions',
-                color: cs.surface,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
                 onSelected: (value) async {
                   HapticFeedback.selectionClick();
                   if (value == 'fullscreen_toggle') {
