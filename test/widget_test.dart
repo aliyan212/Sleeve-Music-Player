@@ -2118,6 +2118,35 @@ void main() {
       expect(() => controller.pause(), returnsNormally);
       expect(() => controller.stop(), returnsNormally);
     });
+
+    testWidgets('Scaffold bottomNavigationBar with Align heightFactor 1.0 rests at bottom of screen', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            extendBody: true,
+            bottomNavigationBar: Align(
+              alignment: Alignment.bottomCenter,
+              heightFactor: 1.0,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 800),
+                child: Container(
+                  key: const ValueKey('bottom_bar'),
+                  height: 80,
+                  color: Colors.blue,
+                ),
+              ),
+            ),
+            body: Container(color: Colors.red),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final barFinder = find.byKey(const ValueKey('bottom_bar'));
+      final rect = tester.getRect(barFinder);
+      expect(rect.bottom, 600.0);
+      expect(rect.top, 520.0);
+    });
   });
 }
 

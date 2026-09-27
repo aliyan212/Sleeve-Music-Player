@@ -123,7 +123,9 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _animatedBottomBars() {
-    return Center(
+    return Align(
+      alignment: Alignment.bottomCenter,
+      heightFactor: 1.0,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 800),
         child: AnimatedSlide(
