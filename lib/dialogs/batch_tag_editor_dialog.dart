@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:audiotags/audiotags.dart';
 import 'package:file_picker/file_picker.dart';

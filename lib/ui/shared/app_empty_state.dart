@@ -114,7 +114,6 @@ class AppEmptyState extends StatelessWidget {
                   actionLabel!,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                ),
               ),
             ],
           ],

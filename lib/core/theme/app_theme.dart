@@ -161,7 +161,7 @@ ThemeData buildTheme(ColorScheme scheme, Brightness brightness) {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         dividerColor: scheme.outlineVariant.withValues(alpha: 0.35),
       ),
-      tabBarTheme: TabBarTheme(
+      tabBarTheme: TabBarThemeData(
         labelColor: scheme.primary,
         unselectedLabelColor: scheme.onSurfaceVariant,
         indicatorColor: scheme.primary,

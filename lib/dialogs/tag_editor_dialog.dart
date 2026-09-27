@@ -846,7 +846,6 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
     final textColor = cs.onSurface;
     final labelColor = cs.onSurfaceVariant;
     final iconColor = cs.onSurfaceVariant.withValues(alpha: 0.75);
-    final fillColor = cs.surfaceContainerLow;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),

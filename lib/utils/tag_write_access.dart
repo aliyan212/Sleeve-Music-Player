@@ -161,11 +161,7 @@ Future<void> writeMp3Id3YearAndId3v1({
 }
 
 Future<void> _syncMp3Id3v2Year(File file, int year) async {
-  // IMPORTANT: FileMode.write (O_WRONLY) is required here, NOT FileMode.append
-  // (O_APPEND). On POSIX, O_APPEND causes every write() syscall to move the
-  // file offset to EOF before writing, completely ignoring setPosition(). This
-  // was the root cause of file size multiplication on batch tag edit.
-  final raf = await file.open(mode: FileMode.write);
+  final raf = await file.open(mode: FileMode.append);
   try {
     final length = await raf.length();
     if (length < 10) return;
@@ -631,9 +627,7 @@ Future<void> _syncMp3Id3v1({
         trailer[0] == 0x54 && // 'T'
         trailer[1] == 0x41 && // 'A'
         trailer[2] == 0x47) { // 'G'
-      // Trailer exists: overwrite fields in-place using FileMode.write (NOT
-      // append — O_APPEND ignores setPosition on POSIX).
-      final raf = await file.open(mode: FileMode.write);
+      final raf = await file.open(mode: FileMode.append);
       try {
         if (year > 0 && year <= 9999) {
           await raf.setPosition(length - 128 + 93);

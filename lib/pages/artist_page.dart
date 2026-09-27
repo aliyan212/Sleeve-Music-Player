@@ -168,25 +168,56 @@ class _ArtistPageState extends State<ArtistPage> {
     }
   }
 
-  int _totalTracks() {
-    int sum = 0;
-    for (final a in widget.albums) {
-      sum += a.trackCount;
+  List<ArtistAlbum> _albumsForSongs(List<SongModel> songs) {
+    if (songs.isEmpty) return widget.albums;
+    final Map<String, List<SongModel>> songsByAlbumKey = {};
+    for (final s in songs) {
+      final key = albumIdentityKey(s);
+      (songsByAlbumKey[key] ??= <SongModel>[]).add(s);
     }
-    return sum;
-  }
-
-  int _totalDurationMs() {
-    int sum = 0;
-    for (final a in widget.albums) {
-      sum += a.totalDurationMs;
+    final albums = <ArtistAlbum>[];
+    for (final entry in songsByAlbumKey.entries) {
+      final albumSongs = entry.value;
+      albumSongs.sort(compareDiscAndTrack);
+      final title = (albumSongs.first.album ?? '').trim().isEmpty
+          ? 'Unknown Album'
+          : albumSongs.first.album!.trim();
+      int year = 0;
+      for (final s in albumSongs) {
+        final y = yearFromSong(s);
+        if (y > 0 && (year == 0 || y < year)) year = y;
+      }
+      int totalMs = 0;
+      for (final s in albumSongs) {
+        totalMs += (s.duration ?? 0);
+      }
+      albums.add(
+        ArtistAlbum(
+          albumId: albumSongs.first.albumId ?? 0,
+          title: title,
+          year: year,
+          trackCount: albumSongs.length,
+          totalDurationMs: totalMs,
+          representativeSong: albumSongs.first,
+        ),
+      );
     }
-    return sum;
+    albums.sort((a, b) {
+      final ay = a.year == 0 ? 9999 : a.year;
+      final by = b.year == 0 ? 9999 : b.year;
+      final yc = ay.compareTo(by);
+      if (yc != 0) return yc;
+      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    });
+    return albums;
   }
 
   List<SongModel> _songsForAlbum(ArtistAlbum a) {
     final targetKey = albumIdentityKey(a.representativeSong);
-    final list = widget.librarySongs
+    final songs = AppStateController.instance.songs.isNotEmpty
+        ? AppStateController.instance.songs
+        : widget.librarySongs;
+    final list = songs
         .where((s) => albumIdentityKey(s) == targetKey)
         .toList();
     list.sort(compareDiscAndTrack);
@@ -194,11 +225,11 @@ class _ArtistPageState extends State<ArtistPage> {
   }
 
   List<SongModel> _allArtistSongs() {
-    if (widget.artistSongs != null && widget.artistSongs!.isNotEmpty) {
-      return widget.artistSongs!;
-    }
+    final songs = AppStateController.instance.songs.isNotEmpty
+        ? AppStateController.instance.songs
+        : widget.librarySongs;
     final norm = widget.artistName.toLowerCase().trim();
-    return widget.librarySongs.where((s) {
+    return songs.where((s) {
       final a = (s.artist ?? '').toLowerCase().trim();
       final aa = albumArtistFor(s).toLowerCase().trim();
       return a == norm || aa == norm;
@@ -344,31 +375,40 @@ class _ArtistPageState extends State<ArtistPage> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final totalTracks = _totalTracks();
-    final totalMs = _totalDurationMs();
-    final paletteAlbumId =
-        widget.albums.isNotEmpty ? widget.albums.first.albumId : 0;
-    final allSongs = _allArtistSongs();
+    return ListenableBuilder(
+      listenable: AppStateController.instance,
+      builder: (context, _) {
+        final allSongs = _allArtistSongs();
+        final currentAlbums = _albumsForSongs(allSongs);
 
-    final content = Material(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: FutureBuilder<
-          ({Color primary, Color secondary, Color tertiary})?>(
-        future: _paletteFuture,
-        initialData: _paletteCache[paletteAlbumId],
-        builder: (context, snap) {
-        final p = snap.data;
-        final bgA = p?.primary;
-        final bgB = p?.secondary;
-        final bgC = p?.tertiary;
-        final top = bgA != null
-            ? Color.alphaBlend(
-                bgA.withValues(alpha: isDark ? 0.22 : 0.12),
-                cs.surface,
-              )
-            : cs.surface;
+        final cs = Theme.of(context).colorScheme;
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+
+        final totalTracks = currentAlbums.fold<int>(
+            0, (sum, a) => sum + a.trackCount);
+        final totalMs = currentAlbums.fold<int>(
+            0, (sum, a) => sum + a.totalDurationMs);
+
+        final paletteAlbumId =
+            currentAlbums.isNotEmpty ? currentAlbums.first.albumId : 0;
+
+        final content = Material(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          child: FutureBuilder<
+              ({Color primary, Color secondary, Color tertiary})?>(
+            future: _paletteFuture,
+            initialData: _paletteCache[paletteAlbumId],
+            builder: (context, snap) {
+            final p = snap.data;
+            final bgA = p?.primary;
+            final bgB = p?.secondary;
+            final bgC = p?.tertiary;
+            final top = bgA != null
+                ? Color.alphaBlend(
+                    bgA.withValues(alpha: isDark ? 0.22 : 0.12),
+                    cs.surface,
+                  )
+                : cs.surface;
         final mid = bgB != null
             ? Color.alphaBlend(
                 bgB.withValues(alpha: isDark ? 0.12 : 0.06),
@@ -557,7 +597,7 @@ class _ArtistPageState extends State<ArtistPage> {
                                     ),
                                   ),
                                   child: Text(
-                                    '${widget.albums.length} ${widget.albums.length == 1 ? 'album' : 'albums'} • $totalTracks tracks • ${formatPlaylistDuration(totalMs)}',
+                                    '${currentAlbums.length} ${currentAlbums.length == 1 ? 'album' : 'albums'} • $totalTracks tracks • ${formatPlaylistDuration(totalMs)}',
                                     style: Theme.of(context)
                                         .textTheme
                                         .labelMedium
@@ -646,7 +686,7 @@ class _ArtistPageState extends State<ArtistPage> {
                             ),
                           ),
                         ),
-                        if (widget.albums.isNotEmpty)
+                        if (currentAlbums.isNotEmpty)
                           SliverToBoxAdapter(
                             child: Padding(
                               padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
@@ -678,7 +718,7 @@ class _ArtistPageState extends State<ArtistPage> {
                         SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, i) {
-                              final a = widget.albums[i];
+                              final a = currentAlbums[i];
                               final yearText =
                                   a.year > 0 ? a.year.toString() : '–';
                               final meta =
@@ -686,11 +726,14 @@ class _ArtistPageState extends State<ArtistPage> {
 
                               final isThisAlbumPlaying = currentSongId !=
                                       null &&
-                                  widget.librarySongs.any((s) =>
-                                      s.id == currentSongId &&
-                                      albumIdentityKey(s) ==
-                                          albumIdentityKey(
-                                              a.representativeSong));
+                                  (AppStateController.instance.songs.isNotEmpty
+                                          ? AppStateController.instance.songs
+                                          : widget.librarySongs)
+                                      .any((s) =>
+                                          s.id == currentSongId &&
+                                          albumIdentityKey(s) ==
+                                              albumIdentityKey(
+                                                  a.representativeSong));
 
                               return UniversalSongTile(
                                 artworkId: a.albumId,
@@ -766,7 +809,7 @@ class _ArtistPageState extends State<ArtistPage> {
                                 },
                               );
                             },
-                            childCount: widget.albums.length,
+                            childCount: currentAlbums.length,
                           ),
                         ),
                         buildBottomBarsGutter(context),
@@ -792,7 +835,7 @@ class _ArtistPageState extends State<ArtistPage> {
           return buildDetailBottomBars(
             context: context,
             player: widget.player,
-            songs: widget.librarySongs,
+            songs: AppStateController.instance.songs,
             currentIndex: snapshot.data ?? widget.player.currentIndex,
             onQueueChanged: widget.onQueueChanged,
             onOpenNowPlaying: widget.onOpenNowPlaying,
@@ -802,6 +845,8 @@ class _ArtistPageState extends State<ArtistPage> {
         },
       ),
       body: content,
+    );
+      },
     );
   }
 }

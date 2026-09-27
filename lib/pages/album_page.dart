@@ -319,9 +319,12 @@ class AlbumPage extends StatefulWidget {
                                 : Colors.transparent,
                             borderColor: Colors.transparent,
                             borderRadius: BorderRadius.circular(14),
-                            onTap: () {
+                            onTap: () async {
                               HapticFeedback.selectionClick();
-                              onPlaySong(song);
+                              final index = currentSongs.indexWhere((s) => s.id == song.id);
+                              if (index != -1) {
+                                await playbackController.playFromQueue(currentSongs, initialIndex: index);
+                              }
                             },
                             onLongPress: () {
                               HapticFeedback.selectionClick();
@@ -534,7 +537,9 @@ class AlbumPage extends StatefulWidget {
                                         child: FilledButton.icon(
                                           onPressed: currentSongs.isEmpty
                                               ? null
-                                              : () => onPlaySong(currentSongs.first),
+                                              : () async {
+                                                  await playbackController.playFromQueue(currentSongs, initialIndex: 0);
+                                                },
                                           icon: const Icon(Icons.play_arrow_rounded, size: 22),
                                           label: const Text(
                                             'Play',
@@ -553,16 +558,12 @@ class AlbumPage extends StatefulWidget {
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
-                                        child: FilledButton.tonalIcon(
+                                        child: FilledButton.icon(
                                           onPressed: currentSongs.isEmpty
                                               ? null
-                                              : () {
-                                                  if (onShuffle != null) {
-                                                    onShuffle!();
-                                                  } else {
-                                                    final shuffled = List<SongModel>.from(currentSongs)..shuffle();
-                                                    onPlaySong(shuffled.first);
-                                                  }
+                                              : () async {
+                                                  final shuffled = List<SongModel>.from(currentSongs)..shuffle();
+                                                  await playbackController.playFromQueue(shuffled, initialIndex: 0);
                                                 },
                                           icon: const Icon(Icons.shuffle_rounded, size: 20),
                                           label: const Text(
@@ -721,15 +722,25 @@ class _AlbumPageState extends State<AlbumPage> {
 
   @override
   Widget build(BuildContext context) {
-    return widget._buildContent(
-      context,
-      _paletteFuture,
-      currentSongs: _songs,
-      currentTitle: _albumTitle,
-      currentArtist: _albumArtist,
-      onBatchUpdated: _onBatchUpdated,
-      scrollController: _scrollController,
-      isScrolled: _isScrolled,
+    return ListenableBuilder(
+      listenable: AppStateController.instance,
+      builder: (context, _) {
+        final currentSongs = AppStateController.instance.songs
+            .where((s) => s.albumId == widget.albumId)
+            .toList()
+          ..sort(compareDiscAndTrack);
+        
+        return widget._buildContent(
+          context,
+          _paletteFuture,
+          currentSongs: currentSongs,
+          currentTitle: _albumTitle,
+          currentArtist: _albumArtist,
+          onBatchUpdated: _onBatchUpdated,
+          scrollController: _scrollController,
+          isScrolled: _isScrolled,
+        );
+      },
     );
   }
 }
