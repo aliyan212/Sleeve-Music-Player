@@ -170,7 +170,12 @@ class MyApp extends StatelessWidget {
                 debugShowCheckedModeBanner: false,
                 routerConfig: appRouter,
                 theme: buildTheme(lightScheme, Brightness.light),
-                darkTheme: buildTheme(darkScheme, Brightness.dark),
+                darkTheme: buildTheme(
+                  darkScheme,
+                  Brightness.dark,
+                  isOled: themeNotifier.isOled,
+                  oledTotalBlack: themeNotifier.oledTotalBlack,
+                ),
               ),
             );
           },

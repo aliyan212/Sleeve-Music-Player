@@ -26,7 +26,9 @@ import '../main.dart';
 import '../services/loved_songs_service.dart';
 import '../services/app_state_controller.dart';
 import '../widgets/now_playing/now_playing_mesh_background.dart';
+import '../widgets/now_playing/now_playing_frosted_background.dart';
 import '../widgets/now_playing/now_playing_landscape_view.dart';
+import '../services/settings_service.dart';
 import '../ui/shared/bouncy_pressable.dart';
 
 class NowPlayingPage extends StatefulWidget {
@@ -965,36 +967,45 @@ class _NowPlayingPageState extends State<NowPlayingPage>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isOled = themeNotifier.isOled;
     final cs = Theme.of(context).colorScheme;
 
     // Adjust colors based on theme - lighter in light mode, darker in dark mode
     Color adjustColorForTheme(Color color) {
       final hsl = HSLColor.fromColor(color);
+      final isAchromatic = hsl.saturation < 0.06;
       if (isDark) {
         // Deep, rich colors for dark mode.
         return hsl
-            .withSaturation((hsl.saturation * 0.95).clamp(0.0, 1.0))
-            .withLightness((hsl.lightness * 0.5).clamp(0.25, 0.45))
+            .withSaturation(isAchromatic ? 0.0 : (hsl.saturation * 0.95).clamp(0.0, 1.0))
+            .withLightness((hsl.lightness * 0.5).clamp(0.20, 0.45))
             .toColor();
       } else {
         // Lighter colors for light mode
         return hsl
+            .withSaturation(isAchromatic ? 0.0 : hsl.saturation)
             .withLightness((hsl.lightness * 0.5 + 0.5).clamp(0.6, 0.9))
             .toColor();
       }
     }
 
+    final isPrimaryAchromatic = _primaryColor != null && isColorAchromatic(_primaryColor!);
+
     // Deep, elegant fallback colors if artwork colors aren't available yet
     final defaultTopColor = isDark
-        ? Color.alphaBlend(
-            cs.primary.withValues(alpha: 0.08),
-            const Color(0xFF141519),
-          )
+        ? (isOled
+            ? Colors.black
+            : Color.alphaBlend(
+                cs.primary.withValues(alpha: 0.08),
+                const Color(0xFF141519),
+              ))
         : cs.surfaceContainerHighest;
     final defaultMidColor = isDark
         ? const Color(0xFF0F1014)
         : cs.surfaceContainer;
-    final defaultAccentColor = cs.primary;
+    final defaultAccentColor = isPrimaryAchromatic
+        ? const Color(0xFF484B58)
+        : cs.primary;
 
     final targetTopColor = _primaryColor != null
         ? adjustColorForTheme(_primaryColor!)
@@ -1004,8 +1015,10 @@ class _NowPlayingPageState extends State<NowPlayingPage>
         : defaultMidColor;
     final targetAccentColor = _tertiaryColor != null
         ? adjustColorForTheme(_tertiaryColor!)
-        : Color.lerp(targetTopColor, targetMidColor, 0.45) ??
-              defaultAccentColor;
+        : (isPrimaryAchromatic
+            ? const Color(0xFF55596A)
+            : (Color.lerp(targetTopColor, targetMidColor, 0.45) ??
+                defaultAccentColor));
 
     final textColor = isDark ? Colors.white : Colors.black87;
     final textColorSecondary = isDark ? Colors.white70 : Colors.black54;
@@ -1014,37 +1027,8 @@ class _NowPlayingPageState extends State<NowPlayingPage>
         : Colors.black.withValues(alpha: 0.08);
     final iconFgColor = isDark ? Colors.white : Colors.black87;
 
-    return GestureDetector(
-      onVerticalDragUpdate: (details) {
-        if (_fullscreenLandscape) return;
-        if (details.primaryDelta! > 0 || _dragOffset > 0) {
-          setState(() {
-            _dragOffset += details.primaryDelta!;
-            if (_dragOffset < 0) _dragOffset = 0;
-          });
-        }
-      },
-      onVerticalDragEnd: (details) {
-        if (_fullscreenLandscape) return;
-        if (_dragOffset > 150 || (details.primaryVelocity ?? 0) > 400) {
-          HapticFeedback.lightImpact();
-          Navigator.pop(context);
-        } else {
-          setState(() => _dragOffset = 0.0);
-        }
-      },
-      child: Transform.translate(
-        offset: Offset(0, _dragOffset),
-        child: Scaffold(
-          backgroundColor: isDark ? const Color(0xFF101116) : cs.surface,
-          body: NowPlayingMeshBackground(
-            targetTopColor: targetTopColor,
-            targetMidColor: targetMidColor,
-            targetAccentColor: targetAccentColor,
-            animation: _bgGradientController,
-            isDark: isDark,
-            child: Column(
-              children: [
+    final content = Column(
+      children: [
                 SizedBox(
                   height: MediaQuery.of(context).viewPadding.top > 0
                       ? MediaQuery.of(context).viewPadding.top
@@ -1491,7 +1475,53 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                         ),
                 ),
               ],
-            ),
+            );
+
+    return GestureDetector(
+      onVerticalDragUpdate: (details) {
+        if (_fullscreenLandscape) return;
+        if (details.primaryDelta! > 0 || _dragOffset > 0) {
+          setState(() {
+            _dragOffset += details.primaryDelta!;
+            if (_dragOffset < 0) _dragOffset = 0;
+          });
+        }
+      },
+      onVerticalDragEnd: (details) {
+        if (_fullscreenLandscape) return;
+        if (_dragOffset > 150 || (details.primaryVelocity ?? 0) > 400) {
+          HapticFeedback.lightImpact();
+          Navigator.pop(context);
+        } else {
+          setState(() => _dragOffset = 0.0);
+        }
+      },
+      child: Transform.translate(
+        offset: Offset(0, _dragOffset),
+        child: Scaffold(
+          backgroundColor: isDark
+              ? (isOled ? Colors.black : const Color(0xFF101116))
+              : cs.surface,
+          body: ListenableBuilder(
+            listenable: SettingsService.instance,
+            builder: (context, _) {
+              if (SettingsService.instance.isFrostedGlassBg) {
+                return NowPlayingFrostedBackground(
+                  artworkBytes: _displayedArtworkBytes,
+                  fallbackColor: targetTopColor,
+                  isDark: isDark,
+                  child: content,
+                );
+              }
+              return NowPlayingMeshBackground(
+                targetTopColor: targetTopColor,
+                targetMidColor: targetMidColor,
+                targetAccentColor: targetAccentColor,
+                animation: _bgGradientController,
+                isDark: isDark,
+                child: content,
+              );
+            },
           ),
         ),
       ),

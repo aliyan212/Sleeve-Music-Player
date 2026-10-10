@@ -7,6 +7,7 @@ import '../services/settings_service.dart';
 import '../dialogs/customize_tabs_dialog.dart';
 import '../widgets/search/app_search_view.dart';
 import '../services/sleep_timer_service.dart';
+import 'appearance_settings_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -68,14 +69,21 @@ class SettingsPage extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 40),
         children: [
           buildSectionTitle('Appearance & Navigation', Icons.palette_rounded),
-          ValueListenableBuilder<ThemeMode>(
-            valueListenable: themeNotifier,
-            builder: (context, themeMode, _) {
+          ListenableBuilder(
+            listenable: themeNotifier,
+            builder: (context, _) {
               return buildListTile(
-                title: 'App Theme',
-                subtitle: themeNotifier.themeMenuLabel,
-                icon: Icons.brightness_6_rounded,
-                onTap: () => themeNotifier.toggle(),
+                title: 'Appearance & Theme',
+                subtitle: '${themeNotifier.themeMenuLabel} • AMOLED, blur & accents',
+                icon: Icons.palette_rounded,
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AppearanceSettingsPage(),
+                    ),
+                  );
+                },
               );
             },
           ),

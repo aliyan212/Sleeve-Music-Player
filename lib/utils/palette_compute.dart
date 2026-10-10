@@ -24,6 +24,9 @@ Future<Map<String, int>> computePaletteFromBytes(Uint8List bytes) async {
 		return await Isolate.run(() {
 			final sampleStep = rgbaBytes.length > 14000 ? 16 : 8;
 			final buckets = <int, ({int count, int rSum, int gSum, int bSum, int satSum})>{};
+			var totalSamples = 0;
+			var colorSamples = 0;
+			var lumSum = 0.0;
 
 			for (var index = 0; index + 3 < rgbaBytes.length; index += sampleStep) {
 				final r = rgbaBytes[index];
@@ -32,14 +35,19 @@ Future<Map<String, int>> computePaletteFromBytes(Uint8List bytes) async {
 				final a = rgbaBytes[index + 3];
 				if (a < 28) continue;
 
+				final maxChannel = math.max(r, math.max(g, b));
+				final minChannel = math.min(r, math.min(g, b));
+				final sat = maxChannel - minChannel;
+				totalSamples++;
+				if (sat > 28) {
+					colorSamples++;
+				}
+				lumSum += (0.299 * r) + (0.587 * g) + (0.114 * b);
+
 				final rBin = r ~/ 43;
 				final gBin = g ~/ 43;
 				final bBin = b ~/ 43;
 				final key = (rBin << 16) | (gBin << 8) | bBin;
-
-				final maxChannel = math.max(r, math.max(g, b));
-				final minChannel = math.min(r, math.min(g, b));
-				final sat = maxChannel - minChannel;
 
 				final current = buckets[key];
 				if (current == null) {
@@ -57,10 +65,38 @@ Future<Map<String, int>> computePaletteFromBytes(Uint8List bytes) async {
 
 			if (buckets.isEmpty) {
 				return {
-					'primary': 0xFF222222,
-					'secondary': 0xFF444444,
-					'tertiary': 0xFF666666,
+					'primary': 0xFF1A1C22,
+					'secondary': 0xFF2D303A,
+					'tertiary': 0xFF4D5160,
 				};
+			}
+
+			// If artwork is predominantly monochrome (black, white, or grayscale with no real color)
+			final isMonochrome = totalSamples > 0 && (colorSamples / totalSamples) < 0.05;
+			if (isMonochrome) {
+				final avgLum = lumSum / totalSamples;
+				if (avgLum < 90) {
+					// Deep dark / black artwork (e.g. dark album cover)
+					return {
+						'primary': 0xFF141519,
+						'secondary': 0xFF262832,
+						'tertiary': 0xFF464958,
+					};
+				} else if (avgLum > 170) {
+					// High-key / predominantly white artwork
+					return {
+						'primary': 0xFF1E2028,
+						'secondary': 0xFF383C4B,
+						'tertiary': 0xFF686D80,
+					};
+				} else {
+					// Midtone grayscale artwork
+					return {
+						'primary': 0xFF181A22,
+						'secondary': 0xFF2E313D,
+						'tertiary': 0xFF545868,
+					};
+				}
 			}
 
 			int toArgbInt(int r, int g, int b) =>
@@ -142,14 +178,12 @@ Future<Map<String, int>> computePaletteFromBytes(Uint8List bytes) async {
 		});
 	} catch (_) {
 		return {
-			'primary': 0xFF222222,
-			'secondary': 0xFF444444,
-			'tertiary': 0xFF666666,
+			'primary': 0xFF1A1C22,
+			'secondary': 0xFF2D303A,
+			'tertiary': 0xFF4D5160,
 		};
 	}
 }
-
-
 
 Color boostVibrance(
   Color color, {
@@ -169,10 +203,22 @@ Color harmonizeBackgroundAccent(
 }) {
   final blended = Color.lerp(color, surface, isDark ? 0.42 : 0.52) ?? color;
   final hsl = HSLColor.fromColor(blended);
-  final sat = hsl.saturation.clamp(0.08, isDark ? 0.42 : 0.38);
+  final isAchromatic = hsl.saturation < 0.05;
+  final sat = isAchromatic ? 0.0 : hsl.saturation.clamp(0.08, isDark ? 0.42 : 0.38);
   final light = hsl.lightness.clamp(
     isDark ? 0.20 : 0.66,
     isDark ? 0.44 : 0.90,
   );
   return hsl.withSaturation(sat).withLightness(light).toColor();
+}
+
+bool isColorAchromatic(Color color) {
+  final argb = color.toARGB32();
+  final r = (argb >> 16) & 0xFF;
+  final g = (argb >> 8) & 0xFF;
+  final b = argb & 0xFF;
+  final diff = math.max(r, math.max(g, b)) - math.min(r, math.min(g, b));
+  if (diff <= 8) return true;
+  final hsl = HSLColor.fromColor(color);
+  return hsl.saturation < 0.06;
 }

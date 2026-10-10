@@ -198,29 +198,27 @@ class PlaybackController {
       _player.playing && _player.processingState != ProcessingState.completed;
 
   Future<void> play() async {
+    audioHandler?.cancelInterruptionResume();
     if (_player.processingState == ProcessingState.completed) {
       await _player.seek(Duration.zero);
     }
-    if (_player.volume < 0.1) {
-      try {
-        await _player.setVolume(1.0);
-      } catch (_) {}
-    }
     return _player.play();
   }
+
   Future<void> pause() {
-    audioHandler?.clearInterruptionResume();
+    audioHandler?.cancelInterruptionResume();
     return _player.pause();
   }
+
   Future<void> stop() {
-    audioHandler?.clearInterruptionResume();
+    audioHandler?.cancelInterruptionResume();
     return _player.stop();
   }
 
   Future<void> togglePlayPause() async {
     HapticFeedback.lightImpact();
     if (isActuallyPlaying) {
-      await _player.pause();
+      await pause();
     } else {
       await play();
     }

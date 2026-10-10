@@ -2106,15 +2106,11 @@ void main() {
       expect(find.text('Customize Bottom Bar'), findsNothing);
     });
 
-    test('PlaybackController play asserts normal volume and pause clears interruption flag', () async {
+    test('PlaybackController play, pause, and stop execute normally', () async {
       TestWidgetsFlutterBinding.ensureInitialized();
       final controller = playbackController;
       
-      // If volume was somehow ducked or muted below 0.1, play() re-asserts 1.0
-      await controller.player.setVolume(0.0);
-      expect(controller.player.volume, 0.0);
-
-      // Verify pause and stop trigger clearInterruptionResume safely
+      expect(() => controller.play(), returnsNormally);
       expect(() => controller.pause(), returnsNormally);
       expect(() => controller.stop(), returnsNormally);
     });

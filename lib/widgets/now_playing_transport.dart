@@ -3,6 +3,7 @@ import '../../ui/shared/bouncy_pressable.dart';
 
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
+import '../main.dart';
 
 class NowPlayingTransport extends StatelessWidget {
   final AudioPlayer player;
@@ -146,6 +147,7 @@ class NowPlayingTransport extends StatelessWidget {
                   child: BouncyPressable(
                     onPressed: () async {
                       if (playing) {
+                        audioHandler?.cancelInterruptionResume();
                         await player.pause();
                       } else {
                         if (player.processingState ==

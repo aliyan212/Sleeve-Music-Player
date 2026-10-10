@@ -483,7 +483,7 @@ class LibraryTab extends StatelessWidget {
                                         HapticFeedback.selectionClick();
                                         if (isCurrent) {
                                           if (playing) {
-                                            await controller.player.pause();
+                                            await controller.pause();
                                           } else {
                                              await appState
                                                  .checkNotificationPermission(context);

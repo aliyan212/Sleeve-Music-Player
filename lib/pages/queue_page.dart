@@ -10,6 +10,7 @@ import '../utils/format_utils.dart';
 import '../widgets/universal_song_tile.dart';
 import '../services/app_state_controller.dart';
 import '../dialogs/playlist_dialogs.dart';
+import '../main.dart';
 
 
 
@@ -610,6 +611,7 @@ class _QueuePageState extends State<QueuePage> {
           onTap: () async {
             HapticFeedback.lightImpact();
             if (widget.player.playing) {
+              audioHandler?.cancelInterruptionResume();
               await widget.player.pause();
             } else {
               unawaited(widget.player.play());

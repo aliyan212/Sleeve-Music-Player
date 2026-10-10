@@ -1,54 +1,142 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum AppThemeMode {
+  system,
+  light,
+  dark,
+  darkOled,
+}
+
+enum OledStyle {
+  hybrid,
+  total,
+}
+
 class ThemeNotifier extends ValueNotifier<ThemeMode> {
   ThemeNotifier() : super(ThemeMode.system) {
     _loadTheme();
   }
 
   static const String _themeKey = 'theme_mode';
+  static const String _appThemeModeKey = 'app_theme_mode';
+  static const String _oledStyleKey = 'oled_style';
+
+  AppThemeMode _appThemeMode = AppThemeMode.system;
+  OledStyle _oledStyle = OledStyle.hybrid;
+
+  AppThemeMode get appThemeMode => _appThemeMode;
+  OledStyle get oledStyle => _oledStyle;
+  bool get isOled => _appThemeMode == AppThemeMode.darkOled;
+  bool get oledTotalBlack => isOled && _oledStyle == OledStyle.total;
 
   Future<void> _loadTheme() async {
     final prefs = await SharedPreferences.getInstance();
-    final themeStr = prefs.getString(_themeKey);
-    if (themeStr == 'light') {
-      value = ThemeMode.light;
-    } else if (themeStr == 'system') {
-      value = ThemeMode.system;
-    } else {
-      // Default: follow system.
-      value = ThemeMode.system;
+    final savedAppModeStr = prefs.getString(_appThemeModeKey);
+    final savedOledStyleStr = prefs.getString(_oledStyleKey);
+
+    if (savedOledStyleStr != null) {
+      _oledStyle = OledStyle.values.firstWhere(
+        (e) => e.name == savedOledStyleStr,
+        orElse: () => OledStyle.hybrid,
+      );
     }
+
+    if (savedAppModeStr != null) {
+      _appThemeMode = AppThemeMode.values.firstWhere(
+        (e) => e.name == savedAppModeStr,
+        orElse: () => AppThemeMode.system,
+      );
+    } else {
+      final legacyThemeStr = prefs.getString(_themeKey);
+      if (legacyThemeStr == 'light') {
+        _appThemeMode = AppThemeMode.light;
+      } else if (legacyThemeStr == 'dark') {
+        _appThemeMode = AppThemeMode.dark;
+      } else {
+        _appThemeMode = AppThemeMode.system;
+      }
+    }
+
+    value = switch (_appThemeMode) {
+      AppThemeMode.system => ThemeMode.system,
+      AppThemeMode.light => ThemeMode.light,
+      AppThemeMode.dark => ThemeMode.dark,
+      AppThemeMode.darkOled => ThemeMode.dark,
+    };
+    notifyListeners();
+  }
+
+  Future<void> setAppThemeMode(AppThemeMode mode) async {
+    _appThemeMode = mode;
+    value = switch (mode) {
+      AppThemeMode.system => ThemeMode.system,
+      AppThemeMode.light => ThemeMode.light,
+      AppThemeMode.dark => ThemeMode.dark,
+      AppThemeMode.darkOled => ThemeMode.dark,
+    };
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_appThemeModeKey, mode.name);
+    final legacyStr = switch (mode) {
+      AppThemeMode.system => 'system',
+      AppThemeMode.light => 'light',
+      AppThemeMode.dark => 'dark',
+      AppThemeMode.darkOled => 'dark',
+    };
+    await prefs.setString(_themeKey, legacyStr);
+    notifyListeners();
+  }
+
+  Future<void> setOledStyle(OledStyle style) async {
+    _oledStyle = style;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_oledStyleKey, style.name);
+    notifyListeners();
   }
 
   Future<void> toggle() async {
-    // Cycle: System -> Light -> Dark -> System
-    value = switch (value) {
-      ThemeMode.system => ThemeMode.light,
-      ThemeMode.light => ThemeMode.dark,
-      ThemeMode.dark => ThemeMode.system,
+    // Cycle: System -> Light -> Dark (Material) -> Dark (OLED) -> System
+    final nextMode = switch (_appThemeMode) {
+      AppThemeMode.system => AppThemeMode.light,
+      AppThemeMode.light => AppThemeMode.dark,
+      AppThemeMode.dark => AppThemeMode.darkOled,
+      AppThemeMode.darkOled => AppThemeMode.system,
     };
-    final prefs = await SharedPreferences.getInstance();
-    final str = switch (value) {
-      ThemeMode.system => 'system',
-      ThemeMode.light => 'light',
-      ThemeMode.dark => 'dark',
-    };
-    await prefs.setString(_themeKey, str);
+    await setAppThemeMode(nextMode);
   }
 
   bool get isDark => value == ThemeMode.dark;
 
   String get themeMenuLabel {
-    return switch (value) {
-      ThemeMode.system => 'Theme: System',
-      ThemeMode.light => 'Theme: Light',
-      ThemeMode.dark => 'Theme: Dark',
+    return switch (_appThemeMode) {
+      AppThemeMode.system => 'Theme: System',
+      AppThemeMode.light => 'Theme: Light',
+      AppThemeMode.dark => 'Theme: Dark (Material)',
+      AppThemeMode.darkOled => 'Theme: Dark (OLED)',
     };
   }
 }
 
-ThemeData buildTheme(ColorScheme scheme, Brightness brightness) {
+ThemeData buildTheme(
+  ColorScheme rawScheme,
+  Brightness brightness, {
+  bool isOled = false,
+  bool oledTotalBlack = false,
+}) {
+    final isDark = brightness == Brightness.dark;
+    final scheme = (isDark && isOled)
+        ? rawScheme.copyWith(
+            surface: Colors.black,
+            surfaceDim: Colors.black,
+            surfaceBright: oledTotalBlack ? Colors.black : const Color(0xFF16181D),
+            surfaceContainerLowest: Colors.black,
+            surfaceContainerLow: oledTotalBlack ? Colors.black : const Color(0xFF101216),
+            surfaceContainer: oledTotalBlack ? Colors.black : const Color(0xFF16181F),
+            surfaceContainerHigh: oledTotalBlack ? const Color(0xFF0E0F12) : const Color(0xFF1E2028),
+            surfaceContainerHighest: oledTotalBlack ? const Color(0xFF16181E) : const Color(0xFF262832),
+          )
+        : rawScheme;
+
     final base = ThemeData(
       useMaterial3: true,
       brightness: brightness,
@@ -83,7 +171,7 @@ ThemeData buildTheme(ColorScheme scheme, Brightness brightness) {
         labelMedium: labelMedium,
       ),
       primaryTextTheme: textTheme,
-      scaffoldBackgroundColor: scheme.surface,
+      scaffoldBackgroundColor: (isDark && isOled) ? Colors.black : scheme.surface,
       appBarTheme: AppBarTheme(
         centerTitle: false,
         elevation: 0,
